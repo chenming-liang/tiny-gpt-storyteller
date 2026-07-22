@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+PLAN.md
+project.md  
+outputs/
+wandb/ 
+venv/
+.venv/
+.ipynb_checkpoints/
