@@ -270,11 +270,11 @@ def main():
         if wandb.run:
             wandb.log({"train/epoch_loss": avg_loss, "train/epoch_ppl": ppl, "epoch": epoch})
 
-    finetuner.save_checkpoint()
+        # Generate a sample response after each epoch
+        response = finetuner.generate_dialog("Write a short story about a friendly dragon.")
+        print(f"── Epoch {epoch} Sample ──\n{response}\n")
 
-    # Quick test: generate a response to a sample instruction
-    response = finetuner.generate_dialog("Write a short story about a friendly dragon.")
-    print(f"\n── Generated Response ──\n{response}\n")
+    finetuner.save_checkpoint()
 
     wandb.finish()
 
