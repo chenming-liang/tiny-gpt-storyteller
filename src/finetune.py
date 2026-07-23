@@ -283,7 +283,7 @@ def main():
     model_cfg.dropout = ft_cfg.dropout
 
     # model name — must match pretrain.py
-    model_name = "gpt-56M"
+    model_name = "gpt-56-5m"
     print(f"Model name: {model_name}")
 
     # tokenizer

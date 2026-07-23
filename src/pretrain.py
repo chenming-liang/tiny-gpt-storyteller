@@ -248,7 +248,7 @@ def main():
     print(f"Model parameters: {n_params:.2f}M")
 
     # auto-version outputs: "outputs/gpt-56M/"
-    model_name = "gpt-56M"
+    model_name = "gpt-56-5m"
     print(f"Model version: {model_name}")
 
     # tokenizer — train a small vocab BPE on TinyStories
