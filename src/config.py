@@ -43,7 +43,7 @@ class FinetuneConfig:
     batch_size = 32            # 序列翻倍，batch 减半保显存
     learning_rate = 3e-5
     weight_decay = 0.0
-    max_epochs = 3
+    max_epochs = 8
     max_steps_per_epoch = 2000
     # dropout (finetuning usually adds some)
     dropout = 0.1
