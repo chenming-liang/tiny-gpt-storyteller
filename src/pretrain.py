@@ -262,6 +262,18 @@ class Trainer:
             },
             path,
         )
+        # also save latest for resume
+        latest_path = os.path.join(ckpt_dir, "latest.pt")
+        torch.save(
+            {
+                "epoch": epoch,
+                "step": step,
+                "model_state_dict": self.model.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "scheduler_state_dict": self.scheduler.state_dict(),
+            },
+            latest_path,
+        )
         print(f"Checkpoint saved: {path}")
 
 
@@ -311,7 +323,18 @@ def main():
 
     trainer = Trainer(model, train_cfg, tokenizer, device)
 
-    for epoch in range(1, train_cfg.max_epochs + 1):
+    # resume from checkpoint if exists
+    start_epoch = 1
+    resume_path = os.path.join("outputs", "pretrained", "latest.pt")
+    if os.path.exists(resume_path):
+        ckpt = torch.load(resume_path, map_location=device)
+        model.load_state_dict(ckpt["model_state_dict"])
+        trainer.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        trainer.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        start_epoch = ckpt["epoch"] + 1
+        print(f"Resumed from {resume_path}, starting epoch {start_epoch}")
+
+    for epoch in range(start_epoch, train_cfg.max_epochs + 1):
         avg_loss = trainer.train_epoch(train_loader, epoch)
         ppl = math.exp(avg_loss)
         print(f"\n=== Epoch {epoch} done: avg loss {avg_loss:.4f}, ppl {ppl:.2f} ===\n")
