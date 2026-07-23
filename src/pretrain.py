@@ -10,7 +10,6 @@ Usage: python src/pretrain.py
 import os
 import math
 import time
-import json
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, IterableDataset
@@ -220,7 +219,7 @@ class Trainer:
                         "train/loss": avg_loss,
                         "train/perplexity": ppl,
                         "train/lr": lr_now,
-                        "train/step": step + epoch * len(dataloader) if hasattr(dataloader, '__len__') else step,
+                        "train/step": step,
                     })
 
             # checkpoint
