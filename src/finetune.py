@@ -225,13 +225,27 @@ class Finetuner:
 
         return total_loss / max(num_batches, 1)
 
-    def save_checkpoint(self):
-        """Save finetuned model weights."""
+    def save_checkpoint(self, epoch: int, step: int):
+        """Save model, optimizer and scheduler state for resume."""
         ckpt_dir = os.path.join("outputs", self.model_name)
         os.makedirs(ckpt_dir, exist_ok=True)
-        path = os.path.join(ckpt_dir, "finetuned.pt")
-        torch.save(self.model.state_dict(), path)
-        print(f"Finetuned model saved: {path}")
+        path = os.path.join(ckpt_dir, "finetune_latest.pt")
+        torch.save({
+            "epoch": epoch,
+            "step": step,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
+        }, path)
+        print(f"Checkpoint saved: {path}")
+
+    def load_checkpoint(self, path):
+        """Load checkpoint and return the epoch to resume from."""
+        ckpt = torch.load(path, map_location=self.device)
+        self.model.load_state_dict(ckpt["model_state_dict"])
+        self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        return ckpt["epoch"]
 
     @torch.no_grad()
     def generate_dialog(self, instruction, input_text="", max_new_tokens=100, temperature=1.0):
@@ -268,11 +282,8 @@ def main():
     model_cfg.max_seq_len = max(model_cfg.max_seq_len, ft_cfg.max_seq_len)  # causal mask needs to cover dataset
     model_cfg.dropout = ft_cfg.dropout
 
-    # auto-detect model name from param count (matches pretrain.py auto-version)
-    _temp_model = GPT(model_cfg)
-    _n_params = count_parameters(_temp_model)
-    model_name = f"gpt-{_n_params:.1f}m".replace(".", "-")
-    del _temp_model
+    # model name — must match pretrain.py
+    model_name = "gpt-56M"
     print(f"Model name: {model_name}")
 
     # tokenizer
@@ -304,7 +315,14 @@ def main():
     # 把 tokenizer 挂到 finetuner 上，供 generate_dialog 使用
     finetuner.tokenizer = tokenizer
 
-    for epoch in range(1, ft_cfg.max_epochs + 1):
+    # resume from checkpoint if exists
+    start_epoch = 1
+    resume_path = os.path.join("outputs", model_name, "finetune_latest.pt")
+    if os.path.exists(resume_path):
+        start_epoch = finetuner.load_checkpoint(resume_path) + 1
+        print(f"Resumed from {resume_path}, starting epoch {start_epoch}")
+
+    for epoch in range(start_epoch, ft_cfg.max_epochs + 1):
         avg_loss = finetuner.train_epoch(dataloader, epoch)
         ppl = math.exp(avg_loss)
         print(f"\n=== Epoch {epoch} done: avg loss {avg_loss:.4f}, ppl {ppl:.2f} ===\n")
@@ -324,7 +342,12 @@ def main():
             response = finetuner.generate_dialog(task, max_new_tokens=80, temperature=0.7)
             print(f"── Epoch {epoch} | {task[:60]} ──\n{response}\n")
 
-    finetuner.save_checkpoint()
+        finetuner.save_checkpoint(epoch, step=-1)
+
+    # save final model (weights only, for inference)
+    final_path = os.path.join("outputs", model_name, "finetuned.pt")
+    torch.save(finetuner.model.state_dict(), final_path)
+    print(f"Final model saved: {final_path}")
 
     wandb.finish()
 
