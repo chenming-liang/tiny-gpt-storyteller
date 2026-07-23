@@ -102,15 +102,12 @@ class AlpacaDataset(Dataset):
 class Finetuner:
     """Handles finetuning loop, loading pretrained weights, and dialog."""
 
-    def __init__(self, model_cfg, train_cfg, device, model_name="gpt"):
+    def __init__(self, model, model_cfg, train_cfg, device, model_name="gpt"):
+        self.model = model
         self.model_cfg = model_cfg
         self.train_cfg = train_cfg
         self.device = device
         self.model_name = model_name
-
-        # load pretrained model
-        self.model = GPT(model_cfg).to(device)
-        self._load_pretrained()
 
         n_params = count_parameters(self.model)
         print(f"Model parameters: {n_params:.2f}M")
@@ -278,20 +275,26 @@ def main():
     model_cfg = GPTConfig()
     ft_cfg = FinetuneConfig()
 
-    # make sure model config matches finetune config
-    model_cfg.max_seq_len = max(model_cfg.max_seq_len, ft_cfg.max_seq_len)  # causal mask needs to cover dataset
+    model = GPT(model_cfg).to(device)
+    model_name = "gpt-56-5m"
+    pretrain_path = os.path.join("outputs", model_name, "final.pt")
+    if os.path.exists(pretrain_path):
+        model.load_state_dict(torch.load(pretrain_path, map_location=device))
+        print(f"Loaded pretrained weights from {pretrain_path}")
+    else:
+        print(f"Warning: no pretrained weights found at {pretrain_path}")
+
     model_cfg.dropout = ft_cfg.dropout
 
-    # model name — must match pretrain.py
-    model_name = "gpt-56-5m"
-    print(f"Model name: {model_name}")
+    n_params = count_parameters(model)
+    print(f"Model parameters: {n_params:.2f}M")
 
     # tokenizer
     from pretrain import load_tokenizer
     tokenizer = load_tokenizer(model_cfg.vocab_size)
 
-    # dataset — use finetune seq len, not model seq len
-    dataset = AlpacaDataset(tokenizer, ft_cfg.max_seq_len, mask_instruction=True)
+    # dataset — use same seq len as pretrain so model shapes match
+    dataset = AlpacaDataset(tokenizer, model_cfg.max_seq_len, mask_instruction=True)
     dataloader = DataLoader(
         dataset,
         batch_size=ft_cfg.batch_size,
@@ -311,7 +314,7 @@ def main():
         },
     )
 
-    finetuner = Finetuner(model_cfg, ft_cfg, device, model_name)
+    finetuner = Finetuner(model, model_cfg, ft_cfg, device, model_name)
     # 把 tokenizer 挂到 finetuner 上，供 generate_dialog 使用
     finetuner.tokenizer = tokenizer
 
