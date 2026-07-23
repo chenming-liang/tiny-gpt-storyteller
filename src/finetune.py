@@ -20,6 +20,14 @@ from config import GPTConfig, FinetuneConfig
 from model import GPT, count_parameters
 
 
+def collate_fn(batch):
+    """Dynamic padding within batch for Alpaca finetuning."""
+    x_batch, y_batch = zip(*batch)
+    x_padded = nn.utils.rnn.pad_sequence(x_batch, batch_first=True, padding_value=0)
+    y_padded = nn.utils.rnn.pad_sequence(y_batch, batch_first=True, padding_value=-1)
+    return x_padded, y_padded
+
+
 # ─────────────────────────── Data ───────────────────────────
 
 def format_prompt(example):
@@ -235,6 +243,7 @@ def main():
         batch_size=ft_cfg.batch_size,
         shuffle=True,
         drop_last=True,
+        collate_fn=collate_fn,
     )
 
     wandb.init(
