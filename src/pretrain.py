@@ -78,12 +78,17 @@ def train_tokenizer(vocab_size: int = 2048):
     )
 
     # Stream TinyStories for training
-    dataset = load_dataset("roneneldan/TinyStories", split="train", streaming=True)
+    ts_dataset = load_dataset("roneneldan/TinyStories", split="train", streaming=True)
+    # Also include Alpaca to cover instruction vocabulary
+    alpaca_dataset = load_dataset("yahma/alpaca-cleaned", split="train")
+
     def text_iterator():
-        for i, example in enumerate(dataset):
-            if i >= 100_000:  # 100k stories is enough for a good tokenizer
+        for i, example in enumerate(ts_dataset):
+            if i >= 100_000:
                 break
             yield example["text"]
+        for example in alpaca_dataset:
+            yield f"### Instruction:\n{example['instruction']}\n\n### Input:\n{example['input']}\n\n### Response:\n{example['output']}"
 
     tokenizer.train_from_iterator(text_iterator(), trainer=trainer)
     tokenizer.save(tokenizer_path)
