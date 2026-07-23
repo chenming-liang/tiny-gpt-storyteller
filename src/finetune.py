@@ -20,12 +20,14 @@ from config import GPTConfig, FinetuneConfig
 from model import GPT, count_parameters
 
 
-def collate_fn(batch):
+def _build_collate_fn(pad_token_id):
     """Dynamic padding within batch for Alpaca finetuning."""
-    x_batch, y_batch = zip(*batch)
-    x_padded = nn.utils.rnn.pad_sequence(x_batch, batch_first=True, padding_value=0)
-    y_padded = nn.utils.rnn.pad_sequence(y_batch, batch_first=True, padding_value=-1)
-    return x_padded, y_padded
+    def collate_fn(batch):
+        x_batch, y_batch = zip(*batch)
+        x_padded = nn.utils.rnn.pad_sequence(x_batch, batch_first=True, padding_value=pad_token_id)
+        y_padded = nn.utils.rnn.pad_sequence(y_batch, batch_first=True, padding_value=-1)
+        return x_padded, y_padded
+    return collate_fn
 
 
 # ─────────────────────────── Data ───────────────────────────
@@ -243,7 +245,7 @@ def main():
         batch_size=ft_cfg.batch_size,
         shuffle=True,
         drop_last=True,
-        collate_fn=collate_fn,
+        collate_fn=_build_collate_fn(tokenizer.pad_token_id),
     )
 
     wandb.init(
@@ -271,7 +273,8 @@ def main():
     finetuner.save_checkpoint()
 
     # Quick test: generate a response to a sample instruction
-    finetuner.generate_dialog("Write a short story about a friendly dragon.")
+    response = finetuner.generate_dialog("Write a short story about a friendly dragon.")
+    print(f"\n── Generated Response ──\n{response}\n")
 
     wandb.finish()
 
