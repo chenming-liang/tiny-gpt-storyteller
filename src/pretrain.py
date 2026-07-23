@@ -115,11 +115,12 @@ def _build_collate_fn(pad_token_id):
 class Trainer:
     """Handles the training loop, logging, evaluation, and checkpointing."""
 
-    def __init__(self, model, train_cfg, tokenizer, device):
+    def __init__(self, model, train_cfg, tokenizer, device, model_name="gpt"):
         self.model = model
         self.cfg = train_cfg
         self.tokenizer = tokenizer
         self.device = device
+        self.model_name = model_name  # e.g. "gpt-3m" for versioning
         self.scaler = GradScaler(enabled=train_cfg.use_amp)
 
         # optimizer with weight decay groups
@@ -249,7 +250,7 @@ class Trainer:
 
     def save_checkpoint(self, epoch: int, step: int):
         """Save model and optimizer state."""
-        ckpt_dir = os.path.join("outputs", "pretrained")
+        ckpt_dir = os.path.join("outputs", self.model_name)
         os.makedirs(ckpt_dir, exist_ok=True)
         path = os.path.join(ckpt_dir, f"ckpt_epoch{epoch}_step{step}.pt")
         torch.save(
@@ -290,6 +291,10 @@ def main():
     n_params = count_parameters(model)
     print(f"Model parameters: {n_params:.2f}M")
 
+    # auto-version outputs: "outputs/gpt-3.5m/"
+    model_name = f"gpt-{n_params:.1f}m".replace(".", "-")
+    print(f"Model version: {model_name}")
+
     # tokenizer — train a small vocab BPE on TinyStories
     tokenizer = train_tokenizer(model_cfg.vocab_size)
 
@@ -306,7 +311,7 @@ def main():
     # wandb
     wandb.init(
         project="tiny-gpt-storyteller",
-        name=f"pretrain_d{model_cfg.d_model}_l{model_cfg.n_layers}",
+        name=f"pretrain_{model_name}",
         config={
             "d_model": model_cfg.d_model,
             "n_layers": model_cfg.n_layers,
@@ -321,11 +326,11 @@ def main():
         },
     )
 
-    trainer = Trainer(model, train_cfg, tokenizer, device)
+    trainer = Trainer(model, train_cfg, tokenizer, device, model_name)
 
     # resume from checkpoint if exists
     start_epoch = 1
-    resume_path = os.path.join("outputs", "pretrained", "latest.pt")
+    resume_path = os.path.join("outputs", model_name, "latest.pt")
     if os.path.exists(resume_path):
         ckpt = torch.load(resume_path, map_location=device)
         model.load_state_dict(ckpt["model_state_dict"])
@@ -342,7 +347,7 @@ def main():
             wandb.log({"train/epoch_loss": avg_loss, "train/epoch_ppl": ppl, "epoch": epoch})
         trainer.save_checkpoint(epoch, step=-1)
 
-    final_dir = os.path.join("outputs", "pretrained")
+    final_dir = os.path.join("outputs", model_name)
     os.makedirs(final_dir, exist_ok=True)
     torch.save(model.state_dict(), os.path.join(final_dir, "final.pt"))
     print(f"Final model saved to {final_dir}/final.pt")
