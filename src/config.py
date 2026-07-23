@@ -38,9 +38,9 @@ class TrainConfig:
 class FinetuneConfig:
     """Finetuning hyperparameters (lower LR, fewer epochs)."""
     # data
-    max_seq_len = GPTConfig.max_seq_len
+    max_seq_len = 512          # Alpaca 指令通常较长
     # optimization
-    batch_size = 64
+    batch_size = 32            # 序列翻倍，batch 减半保显存
     learning_rate = 3e-5
     weight_decay = 0.0
     max_epochs = 3
