@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader, Dataset
 from torch.optim import AdamW
 from torch.amp import GradScaler, autocast
 from datasets import load_dataset
+from transformers import get_cosine_schedule_with_warmup
 import wandb
 
 from config import GPTConfig, FinetuneConfig
@@ -114,15 +115,49 @@ class Finetuner:
         n_params = count_parameters(self.model)
         print(f"Model parameters: {n_params:.2f}M")
 
-        # lower LR for finetuning
-        self.optimizer = AdamW(
-            self.model.parameters(),
-            lr=train_cfg.learning_rate,     # should be 1e-5 ~ 5e-5
-            betas=(0.9, 0.95),
-            weight_decay=0.0,
+        # optimizer with weight decay groups
+        self.optimizer = self._configure_optimizers()
+
+        # cosine scheduler with warmup
+        total_steps = train_cfg.max_epochs * train_cfg.max_steps_per_epoch
+        self.scheduler = get_cosine_schedule_with_warmup(
+            self.optimizer,
+            num_warmup_steps=int(total_steps * 0.1),  # 10% warmup
+            num_training_steps=total_steps,
         )
 
         self.scaler = GradScaler(enabled=train_cfg.use_amp)
+
+    def _configure_optimizers(self):
+        """Separate params into weight-decay and no-decay groups."""
+        decay, no_decay = set(), set()
+        whitelist = (nn.Linear,)
+        blacklist = (nn.LayerNorm, nn.Embedding)
+
+        for mn, m in self.model.named_modules():
+            for pn, p in m.named_parameters():
+                fpn = f'{mn}.{pn}' if mn else pn
+                if fpn.endswith('bias'):
+                    no_decay.add(fpn)
+                elif fpn.endswith('weight') and isinstance(m, whitelist):
+                    decay.add(fpn)
+                elif fpn.endswith('weight') and isinstance(m, blacklist):
+                    no_decay.add(fpn)
+
+        param_dict = {pn: p for pn, p in self.model.named_parameters()}
+        inter = decay & no_decay
+        assert not inter, f"params in both sets: {inter}"
+        missing = param_dict.keys() - (decay | no_decay)
+        assert not missing, f"params not assigned: {missing}"
+
+        return AdamW(
+            [
+                {"params": [param_dict[pn] for pn in sorted(decay)], "weight_decay": self.train_cfg.weight_decay},
+                {"params": [param_dict[pn] for pn in sorted(no_decay)], "weight_decay": 0.0},
+            ],
+            lr=self.train_cfg.learning_rate,
+            betas=(0.9, 0.95),
+        )
 
     def _load_pretrained(self):
         """
@@ -168,6 +203,7 @@ class Finetuner:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.scaler.step(self.optimizer)
             self.scaler.update()
+            self.scheduler.step()
 
             total_loss += loss.item()
             num_batches += 1

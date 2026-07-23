@@ -44,8 +44,8 @@ class FinetuneConfig:
     max_seq_len = 512          # Alpaca 指令通常较长
     # optimization
     batch_size = 32            # 序列翻倍，batch 减半保显存
-    learning_rate = 3e-5
-    weight_decay = 0.0
+    learning_rate = 1e-4        # mask_instruction 需要更大 lr 补偿信号损失
+    weight_decay = 0.1
     max_epochs = 5
     max_steps_per_epoch = 2000
     # dropout (finetuning usually adds some)
