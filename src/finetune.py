@@ -270,9 +270,15 @@ def main():
         if wandb.run:
             wandb.log({"train/epoch_loss": avg_loss, "train/epoch_ppl": ppl, "epoch": epoch})
 
-        # Generate a sample response after each epoch
-        response = finetuner.generate_dialog("Write a short story about a friendly dragon.")
-        print(f"── Epoch {epoch} Sample ──\n{response}\n")
+        # Generate sample responses after each epoch (难度递增)
+        tasks = [
+            "Once upon a time, there was a little bunny who lived in a forest.",
+            "Describe the main character of the story in one sentence.",
+            "Rewrite the following sentence to be more exciting: 'The cat sat on the mat.'",
+        ]
+        for task in tasks:
+            response = finetuner.generate_dialog(task)
+            print(f"── Epoch {epoch} | {task[:40]}... ──\n{response}\n")
 
     finetuner.save_checkpoint()
 
