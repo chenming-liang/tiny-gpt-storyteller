@@ -32,6 +32,9 @@ class TrainConfig:
         "Once upon a time",
         "The little cat",
         "In a faraway land",
+        "Write a story about a bear.",
+        "Write a story about a rabbit that eats a carrot.",
+        "Write a story about a duck that swims in a pond and feels happy.",
     ]
 
 

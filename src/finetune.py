@@ -198,7 +198,7 @@ class Finetuner:
         print(f"Finetuned model saved: {path}")
 
     @torch.no_grad()
-    def generate_dialog(self, instruction, input_text="", max_new_tokens=100):
+    def generate_dialog(self, instruction, input_text="", max_new_tokens=100, temperature=1.0):
         """
         TODO: 与微调后的模型对话
 
@@ -212,7 +212,7 @@ class Finetuner:
         # ===== 你的代码从这里开始 =====
         prompt = build_prompt(instruction, input_text)
         tokens = self.tokenizer(prompt, return_tensors="pt")["input_ids"].to(self.device)
-        res_tok = self.model.generate(tokens, max_new_tokens=max_new_tokens)
+        res_tok = self.model.generate(tokens, max_new_tokens=max_new_tokens, temperature=temperature)
         response = self.tokenizer.decode(res_tok[0][len(tokens[0]):], skip_special_tokens=True)
         # ===== 你的代码到这里结束 =====
 
@@ -277,13 +277,16 @@ def main():
 
         # Generate sample responses after each epoch (难度递增)
         tasks = [
-            "Once upon a time, there was a little bunny who lived in a forest.",
-            "Describe the main character of the story in one sentence.",
-            "Rewrite the following sentence to be more exciting: 'The cat sat on the mat.'",
+            # Level 1: 简单故事
+            "Write a story about a bear.",
+            # Level 2: 极简二选一常识
+            "Which one is correct? A: The sun makes the sky bright. B: The sun makes the sky black.",
+            # Level 3: 超越能力边界 — 几何/多步推理，模型必然失败
+            "Answer the question directly: If a triangle has sides of length 3, 4, and 5, is the angle opposite to the side of length 5 acute, right, or obtuse? Explain why using the Pythagorean theorem.",
         ]
         for task in tasks:
-            response = finetuner.generate_dialog(task)
-            print(f"── Epoch {epoch} | {task[:40]}... ──\n{response}\n")
+            response = finetuner.generate_dialog(task, max_new_tokens=80, temperature=0.7)
+            print(f"── Epoch {epoch} | {task[:60]} ──\n{response}\n")
 
     finetuner.save_checkpoint()
 
