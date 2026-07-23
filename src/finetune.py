@@ -228,18 +228,23 @@ def main():
     model_cfg = GPTConfig()
     ft_cfg = FinetuneConfig()
 
-    # 微调时加一点 dropout 防止过拟合
+    # make sure model config matches finetune config
+    model_cfg.max_seq_len = max(model_cfg.max_seq_len, ft_cfg.max_seq_len)  # causal mask needs to cover dataset
     model_cfg.dropout = ft_cfg.dropout
 
-    # 模型名称（和预训练时一致，用于加载权重）
-    model_name = "gpt-6-9m"
+    # auto-detect model name from param count (matches pretrain.py auto-version)
+    _temp_model = GPT(model_cfg)
+    _n_params = count_parameters(_temp_model)
+    model_name = f"gpt-{_n_params:.1f}m".replace(".", "-")
+    del _temp_model
+    print(f"Model name: {model_name}")
 
-    # tokenizer（需要和预训练时用的是同一个）
+    # tokenizer
     from pretrain import load_tokenizer
     tokenizer = load_tokenizer(model_cfg.vocab_size)
 
-    # dataset
-    dataset = AlpacaDataset(tokenizer, model_cfg.max_seq_len, mask_instruction=True)
+    # dataset — use finetune seq len, not model seq len
+    dataset = AlpacaDataset(tokenizer, ft_cfg.max_seq_len, mask_instruction=True)
     dataloader = DataLoader(
         dataset,
         batch_size=ft_cfg.batch_size,
