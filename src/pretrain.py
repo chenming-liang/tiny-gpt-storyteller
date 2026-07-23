@@ -214,11 +214,13 @@ class Trainer:
             print()
         self.model.train()
 
-    def save_checkpoint(self, epoch: int, step: int):
-        """Save model and optimizer state."""
+    def save_checkpoint(self, epoch: int, step: int, is_final: bool = False):
+        """Save model and optimizer state. Only keeps latest + epoch-end checkpoints."""
         ckpt_dir = os.path.join("outputs", self.model_name)
         os.makedirs(ckpt_dir, exist_ok=True)
-        path = os.path.join(ckpt_dir, f"ckpt_epoch{epoch}_step{step}.pt")
+
+        # always save latest for resume (single file, overwritten each time)
+        path = os.path.join(ckpt_dir, "latest.pt")
         torch.save(
             {
                 "epoch": epoch,
@@ -228,18 +230,6 @@ class Trainer:
                 "scheduler_state_dict": self.scheduler.state_dict(),
             },
             path,
-        )
-        # also save latest for resume
-        latest_path = os.path.join(ckpt_dir, "latest.pt")
-        torch.save(
-            {
-                "epoch": epoch,
-                "step": step,
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "scheduler_state_dict": self.scheduler.state_dict(),
-            },
-            latest_path,
         )
         print(f"Checkpoint saved: {path}")
 
@@ -311,7 +301,7 @@ def main():
         print(f"\n=== Epoch {epoch} done: avg loss {avg_loss:.4f}, ppl {ppl:.2f} ===\n")
         if wandb.run:
             wandb.log({"train/epoch_loss": avg_loss, "train/epoch_ppl": ppl, "epoch": epoch})
-        trainer.save_checkpoint(epoch, step=-1)
+        trainer.save_checkpoint(epoch, step=-1, is_final=(epoch == train_cfg.max_epochs))
 
     final_dir = os.path.join("outputs", model_name)
     os.makedirs(final_dir, exist_ok=True)

@@ -24,7 +24,7 @@ class TrainConfig:
     use_amp = True
     # logging
     log_interval = 100
-    save_interval = 500
+    save_interval = 5000
     eval_interval = 1000
     # generation sampling
     sample_interval = 1000
