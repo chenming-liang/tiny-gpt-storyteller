@@ -10,13 +10,15 @@ Usage: python src/pretrain.py
 import os
 import math
 import time
+import json
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, IterableDataset
 from torch.optim import AdamW
 from torch.amp import GradScaler, autocast
 from datasets import load_dataset
-from transformers import AutoTokenizer, get_cosine_schedule_with_warmup
+from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
+from transformers import PreTrainedTokenizerFast, get_cosine_schedule_with_warmup
 import wandb
 
 from config import GPTConfig, TrainConfig
@@ -53,6 +55,48 @@ class TinyStoriesDataset(IterableDataset):
             yield torch.tensor(x, dtype=torch.long), torch.tensor(y, dtype=torch.long)
 
 
+# ─────────────────────────── Tokenizer ───────────────────────────
+
+def train_tokenizer(vocab_size: int = 2048):
+    """Train a BPE tokenizer on TinyStories with a small vocabulary."""
+    tokenizer_path = f"outputs/tokenizer_{vocab_size}.json"
+    if os.path.exists(tokenizer_path):
+        tokenizer = PreTrainedTokenizerFast(tokenizer_file=tokenizer_path)
+        tokenizer.pad_token = "<|pad|>"
+        return tokenizer
+
+    os.makedirs("outputs", exist_ok=True)
+
+    # Initialize a BPE tokenizer
+    tokenizer = Tokenizer(models.BPE())
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+    tokenizer.decoder = decoders.ByteLevel()
+    tokenizer.post_processor = None
+
+    trainer = trainers.BpeTrainer(
+        vocab_size=vocab_size,
+        special_tokens=["<|pad|>", "<|endoftext|>"],
+    )
+
+    # Stream TinyStories for training
+    dataset = load_dataset("roneneldan/TinyStories", split="train", streaming=True)
+    def text_iterator():
+        for i, example in enumerate(dataset):
+            if i >= 100_000:  # 100k stories is enough for a good tokenizer
+                break
+            yield example["text"]
+
+    tokenizer.train_from_iterator(text_iterator(), trainer=trainer)
+    tokenizer.save(tokenizer_path)
+
+    # Wrap with HF interface for convenience
+    hf_tokenizer = PreTrainedTokenizerFast(tokenizer_file=tokenizer_path)
+    hf_tokenizer.pad_token = "<|pad|>"
+    hf_tokenizer.eos_token = "<|endoftext|>"
+    print(f"Tokenizer trained: vocab_size={hf_tokenizer.vocab_size}")
+    return hf_tokenizer
+
+
 def _build_collate_fn(pad_token_id):
     """Dynamic padding within batch. 基础设施，直接抄就行。"""
     def collate_fn(batch):
@@ -72,9 +116,10 @@ def _build_collate_fn(pad_token_id):
 class Trainer:
     """Handles the training loop, logging, evaluation, and checkpointing."""
 
-    def __init__(self, model, train_cfg, device):
+    def __init__(self, model, train_cfg, tokenizer, device):
         self.model = model
         self.cfg = train_cfg
+        self.tokenizer = tokenizer
         self.device = device
         self.scaler = GradScaler(enabled=train_cfg.use_amp)
 
@@ -193,11 +238,9 @@ class Trainer:
         """Generate text from a prompt for qualitative inspection."""
         self.model.eval()
         for prompt_text in self.cfg.sample_prompts:
-            tokenizer = AutoTokenizer.from_pretrained("gpt2")
-            tokenizer.pad_token = tokenizer.eos_token
-            input_ids = tokenizer(prompt_text, return_tensors="pt")["input_ids"].to(self.device)
+            input_ids = self.tokenizer(prompt_text, return_tensors="pt")["input_ids"].to(self.device)
             output = self.model.generate(input_ids, max_new_tokens=50, temperature=1.0)
-            generated = tokenizer.decode(output[0], skip_special_tokens=True)
+            generated = self.tokenizer.decode(output[0], skip_special_tokens=True)
             print(f"\n── Prompt: {prompt_text} ──")
             print(generated)
             print()
@@ -234,9 +277,8 @@ def main():
     n_params = count_parameters(model)
     print(f"Model parameters: {n_params:.2f}M")
 
-    # tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    # tokenizer — train a small vocab BPE on TinyStories
+    tokenizer = train_tokenizer(model_cfg.vocab_size)
 
     # datasets
     train_dataset = TinyStoriesDataset("train", tokenizer, model_cfg.max_seq_len)
@@ -266,7 +308,7 @@ def main():
         },
     )
 
-    trainer = Trainer(model, train_cfg, device)
+    trainer = Trainer(model, train_cfg, tokenizer, device)
 
     for epoch in range(1, train_cfg.max_epochs + 1):
         avg_loss = trainer.train_epoch(train_loader, epoch)
