@@ -126,7 +126,7 @@ class Trainer:
         self.optimizer = self._configure_optimizers()
 
         # scheduler
-        total_steps = train_cfg.max_epochs * 100_000  # rough estimate
+        total_steps = train_cfg.max_epochs * train_cfg.max_steps_per_epoch  # exact estimate
         self.scheduler = get_cosine_schedule_with_warmup(
             self.optimizer,
             num_warmup_steps=train_cfg.warmup_steps,
@@ -182,6 +182,8 @@ class Trainer:
         start_time = time.time()
 
         for step, (x, y) in enumerate(dataloader):
+            if self.cfg.max_steps_per_epoch > 0 and step >= self.cfg.max_steps_per_epoch:
+                break
             x, y = x.to(self.device), y.to(self.device)
 
             # TODO: 训练循环核心

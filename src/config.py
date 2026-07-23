@@ -17,6 +17,7 @@ class TrainConfig:
     learning_rate = 3e-4
     weight_decay = 0.1
     max_epochs = 5
+    max_steps_per_epoch = 5000  # limit steps per epoch for streaming data
     # scheduler
     warmup_steps = 1000
     # mixed precision
