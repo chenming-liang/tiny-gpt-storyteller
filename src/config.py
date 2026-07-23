@@ -1,10 +1,10 @@
 class GPTConfig:
-    """GPT model hyperparameters (~1.2M params)."""
-    vocab_size = 4096
+    """GPT model hyperparameters (~73M params)."""
+    vocab_size = 50257
     max_seq_len = 256
-    d_model = 256
-    n_layers = 6
-    n_heads = 8
+    d_model = 512
+    n_layers = 10
+    n_heads = 12
     dropout = 0.0
 
 

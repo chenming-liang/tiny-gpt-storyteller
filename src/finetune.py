@@ -235,8 +235,8 @@ def main():
     model_name = "gpt-6-9m"
 
     # tokenizer（需要和预训练时用的是同一个）
-    from pretrain import train_tokenizer
-    tokenizer = train_tokenizer(model_cfg.vocab_size)
+    from pretrain import load_tokenizer
+    tokenizer = load_tokenizer(model_cfg.vocab_size)
 
     # dataset
     dataset = AlpacaDataset(tokenizer, model_cfg.max_seq_len, mask_instruction=True)

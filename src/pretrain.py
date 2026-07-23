@@ -16,8 +16,7 @@ from torch.utils.data import DataLoader, IterableDataset
 from torch.optim import AdamW
 from torch.amp import GradScaler, autocast
 from datasets import load_dataset
-from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
-from transformers import PreTrainedTokenizerFast, get_cosine_schedule_with_warmup
+from transformers import AutoTokenizer, get_cosine_schedule_with_warmup
 import wandb
 
 from config import GPTConfig, TrainConfig
@@ -56,49 +55,11 @@ class TinyStoriesDataset(IterableDataset):
 
 # ─────────────────────────── Tokenizer ───────────────────────────
 
-def train_tokenizer(vocab_size: int = 2048):
-    """Train a BPE tokenizer on TinyStories with a small vocabulary."""
-    tokenizer_path = f"outputs/tokenizer_{vocab_size}.json"
-    if os.path.exists(tokenizer_path):
-        tokenizer = PreTrainedTokenizerFast(tokenizer_file=tokenizer_path)
-        tokenizer.pad_token = "<|pad|>"
-        return tokenizer
-
-    os.makedirs("outputs", exist_ok=True)
-
-    # Initialize a BPE tokenizer
-    tokenizer = Tokenizer(models.BPE())
-    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
-    tokenizer.decoder = decoders.ByteLevel()
-    tokenizer.post_processor = None
-
-    trainer = trainers.BpeTrainer(
-        vocab_size=vocab_size,
-        special_tokens=["<|pad|>", "<|endoftext|>"],
-    )
-
-    # Stream TinyStories for training
-    ts_dataset = load_dataset("roneneldan/TinyStories", split="train", streaming=True)
-    # Also include Alpaca to cover instruction vocabulary
-    alpaca_dataset = load_dataset("yahma/alpaca-cleaned", split="train")
-
-    def text_iterator():
-        for i, example in enumerate(ts_dataset):
-            if i >= 100_000:
-                break
-            yield example["text"]
-        for example in alpaca_dataset:
-            yield f"### Instruction:\n{example['instruction']}\n\n### Input:\n{example['input']}\n\n### Response:\n{example['output']}"
-
-    tokenizer.train_from_iterator(text_iterator(), trainer=trainer)
-    tokenizer.save(tokenizer_path)
-
-    # Wrap with HF interface for convenience
-    hf_tokenizer = PreTrainedTokenizerFast(tokenizer_file=tokenizer_path)
-    hf_tokenizer.pad_token = "<|pad|>"
-    hf_tokenizer.eos_token = "<|endoftext|>"
-    print(f"Tokenizer trained: vocab_size={hf_tokenizer.vocab_size}")
-    return hf_tokenizer
+def load_tokenizer(vocab_size: int = 50257):
+    """Load GPT-2 tokenizer (use directly, no training needed)."""
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer.pad_token = tokenizer.eos_token
+    return tokenizer
 
 
 def _build_collate_fn(pad_token_id):
@@ -301,7 +262,7 @@ def main():
     print(f"Model version: {model_name}")
 
     # tokenizer — train a small vocab BPE on TinyStories
-    tokenizer = train_tokenizer(model_cfg.vocab_size)
+    tokenizer = load_tokenizer(model_cfg.vocab_size)
 
     # datasets
     train_dataset = TinyStoriesDataset("train", tokenizer, model_cfg.max_seq_len)
