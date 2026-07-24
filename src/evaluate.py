@@ -17,9 +17,9 @@ from torch.utils.data import DataLoader
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from config import GPTConfig, FinetuneConfig
+from config import GPTConfig
 from model import GPT
-from finetune import build_prompt  # noqa: E402
+from finetune import build_prompt
 
 
 # ────────────────────────── Configuration ──────────────────────────
@@ -34,7 +34,6 @@ MODEL_DESC   = "GPT (d_model=384, n_layers=10, n_heads=12, ~53M params)"
 # Generation config per model variant
 TEXT_TEMP     = 1.0          # raw text completion
 INSTRUCT_TEMP = 0.7          # instruction-following
-MAX_NEW_TOKENS = 50
 
 # ── Test prompts ──
 
@@ -223,11 +222,9 @@ def _load_model(device, variant):
 
     path = CHECKPOINTS[variant]
     state = torch.load(path, map_location=device, weights_only=True)
-    # finetuned.pt is bare state_dict (no wrapper); latest.pt is a checkpoint dict
+    # checkpoint dict has "model_state_dict" key; bare state_dict doesn't
     if "model_state_dict" in state:
         state = state["model_state_dict"]
-    elif isinstance(state, dict) and all(isinstance(v, torch.Tensor) for v in state.values()):
-        pass  # already bare state_dict
     model.load_state_dict(state)
     print(f"Loaded {variant} from {path}")
     return model
