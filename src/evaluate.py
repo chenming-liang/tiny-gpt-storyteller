@@ -26,7 +26,7 @@ from finetune import build_prompt  # noqa: E402
 
 CHECKPOINTS = {
     "pretrained": "outputs/gpt-56-5m/final.pt",
-    "finetuned":  "outputs/gpt-56-5m/finetune_latest.pt",
+    "finetuned":  "outputs/gpt-56-5m/finetuned.pt",
 }
 
 MODEL_DESC   = "GPT (d_model=384, n_layers=10, n_heads=12, ~53M params)"
@@ -206,8 +206,11 @@ def _load_model(device, variant):
 
     path = CHECKPOINTS[variant]
     state = torch.load(path, map_location=device, weights_only=True)
+    # finetuned.pt is bare state_dict (no wrapper); latest.pt is a checkpoint dict
     if "model_state_dict" in state:
         state = state["model_state_dict"]
+    elif isinstance(state, dict) and all(isinstance(v, torch.Tensor) for v in state.values()):
+        pass  # already bare state_dict
     model.load_state_dict(state)
     print(f"Loaded {variant} from {path}")
     return model
