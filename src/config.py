@@ -1,7 +1,7 @@
 class GPTConfig:
     """GPT model hyperparameters (~53M params)."""
     vocab_size = 50257
-    max_seq_len = 512
+    max_seq_len = 256
     d_model = 384
     n_layers = 10
     n_heads = 12
@@ -43,7 +43,7 @@ class FinetuneConfig:
     # data
     max_seq_len = 256
     # optimization
-    batch_size = 32            # 序列翻倍，batch 减半保显存
+    batch_size = 32
     learning_rate = 1e-4        # mask_instruction 需要更大 lr 补偿信号损失
     weight_decay = 0.1
     max_epochs = 5
