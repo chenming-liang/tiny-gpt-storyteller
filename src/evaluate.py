@@ -12,6 +12,7 @@ import math
 import os
 import sys
 import torch
+import torch.nn.functional as F
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
@@ -116,7 +117,11 @@ class Report:
 
 @torch.no_grad()
 def evaluate_ppl(model, dataset, tokenizer, device, max_seq_len=256):
-    """Compute perplexity on a tokenized text dataset (iterates sample by sample)."""
+    """Compute perplexity with correct causal LM evaluation.
+
+    At each position t, the model predicts token t+1.
+    This mirrors how loss is computed during training: x=tokens[:-1], y=tokens[1:].
+    """
     model.eval()
     total_loss = 0.0
     total_tokens = 0
@@ -126,8 +131,13 @@ def evaluate_ppl(model, dataset, tokenizer, device, max_seq_len=256):
         )["input_ids"]
         if len(tokens) < 2:
             continue
-        input_ids = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(0)
-        _, loss = model(input_ids, targets=input_ids)
+        x = torch.tensor(tokens[:-1], dtype=torch.long, device=device).unsqueeze(0)
+        y = torch.tensor(tokens[1:],  dtype=torch.long, device=device).unsqueeze(0)
+        logits, _ = model(x)                     # forward without loss
+        loss = F.cross_entropy(
+            logits.view(-1, logits.size(-1)),
+            y.view(-1),
+        )
         total_loss += loss.item() * len(tokens)
         total_tokens += len(tokens)
     avg_loss = total_loss / total_tokens
