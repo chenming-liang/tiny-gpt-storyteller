@@ -113,17 +113,34 @@ class Report:
 # ────────────────────────── Data ──────────────────────────
 
 def load_wikitext2(tokenizer, max_seq_len, batch_size):
+    """Load WikiText-2 test set (generic text evaluation).
+
+    Note: for TinyStories-trained models, use load_tinystories_val()
+    for in-domain evaluation instead.
+    """
     dataset = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1", split="test")
 
-    def tokenize_fn(batch):
-        texts = [t for t in batch["text"] if t.strip()]
+    return _prepare_text_dataset(dataset, tokenizer, max_seq_len, batch_size)
+
+
+def load_tinystories_val(tokenizer, max_seq_len, batch_size):
+    """Load TinyStories validation set (in-domain evaluation)."""
+    dataset = load_dataset("roneneldan/TinyStories", split="validation")
+    return _prepare_text_dataset(dataset, tokenizer, max_seq_len, batch_size)
+
+
+def _prepare_text_dataset(dataset, tokenizer, max_seq_len, batch_size):
+    """Tokenize a text dataset and return a DataLoader."""
+
+    def tokenize_fn(examples):
+        texts = examples["text"]
         encodings = tokenizer(
             texts, truncation=True, max_length=max_seq_len,
             padding=False, return_tensors=None,
         )
         return {"input_ids": encodings["input_ids"]}
 
-    dataset = dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
+    dataset = dataset.map(tokenize_fn, batched=True, remove_columns=dataset.column_names)
     dataset = dataset.filter(lambda x: len(x["input_ids"]) > 0)
 
     loader = DataLoader(
@@ -219,7 +236,16 @@ def _load_model(device, variant):
 def run_pretrained(device, tokenizer, report):
     model = _load_model(device, "pretrained")
 
-    # Quantitative
+    # Quantitative — in-domain (TinyStories validation)
+    report.section("Quantitative: TinyStories Validation Perplexity")
+    loader = load_tinystories_val(tokenizer, GPTConfig.max_seq_len, batch_size=32)
+    ppl, avg_loss = evaluate_ppl(model, loader, device)
+    report.kv("Loss", f"{avg_loss:.4f}")
+    report.kv("Perplexity", f"{ppl:.2f}")
+    report.add()
+    print(f"TinyStories → loss: {avg_loss:.4f}, PPL: {ppl:.2f}")
+
+    # Quantitative — out-of-domain (WikiText-2)
     report.section("Quantitative: WikiText-2 Perplexity")
     loader = load_wikitext2(tokenizer, GPTConfig.max_seq_len, batch_size=32)
     ppl, avg_loss = evaluate_ppl(model, loader, device)
