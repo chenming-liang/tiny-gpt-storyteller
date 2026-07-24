@@ -41,7 +41,7 @@ class TrainConfig:
 class FinetuneConfig:
     """Finetuning hyperparameters (lower LR, fewer epochs)."""
     # data
-    max_seq_len = 512          # Alpaca 指令通常较长
+    max_seq_len = 256
     # optimization
     batch_size = 32            # 序列翻倍，batch 减半保显存
     learning_rate = 1e-4        # mask_instruction 需要更大 lr 补偿信号损失
