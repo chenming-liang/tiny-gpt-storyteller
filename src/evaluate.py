@@ -113,7 +113,7 @@ class Report:
 # ────────────────────────── Data ──────────────────────────
 
 def load_wikitext2(tokenizer, max_seq_len, batch_size):
-    dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+    dataset = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1", split="test")
 
     def tokenize_fn(batch):
         texts = [t for t in batch["text"] if t.strip()]
