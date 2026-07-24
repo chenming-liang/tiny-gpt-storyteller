@@ -1,108 +1,44 @@
 """
 Evaluation: quantitative (WikiText-2 PPL) + qualitative (generation samples).
+
 Usage:
-    python src/evaluate.py pretrained    # PPL + pretrained generation
-    python src/evaluate.py finetuned     # finetuned generation
-    python src/evaluate.py compare       # both + side-by-side comparison
-Output: outputs/evaluation_results.md (appended each run)
+    python src/evaluate.py pretrained    # PPL + generation
+    python src/evaluate.py finetuned     # generation (instruction format)
+    python src/evaluate.py compare       # both side-by-side
+
+Output: outputs/evaluation_results.md
 """
 import math
 import os
+import sys
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from datasets import load_dataset
 from transformers import AutoTokenizer
-import sys
 
-from config import GPTConfig, TrainConfig, FinetuneConfig
-from model import GPT, count_parameters
-from finetune import build_prompt
-
-
-# ─────────────────────── Helpers ───────────────────────
-
-class Report:
-    """Collect evaluation results and write to markdown."""
-
-    def __init__(self):
-        self.lines = []
-
-    def add(self, text=""):
-        self.lines.append(text)
-
-    def add_code(self, text):
-        self.lines.append(f"```\n{text}\n```")
-
-    def save(self, path="outputs/evaluation_results.md"):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        mode = "a" if os.path.exists(path) else "w"
-        with open(path, mode, encoding="utf-8") as f:
-            f.write("\n".join(self.lines) + "\n\n")
-        print(f"\nResults appended to {path}")
-
-    def section(self, title, level=2):
-        self.add(f"{'#' * level} {title}")
-        self.add()
-
-    def table(self, headers, rows):
-        sep = "| " + " | ".join(["---"] * len(headers)) + " |"
-        self.add("| " + " | ".join(headers) + " |")
-        self.add(sep)
-        for row in rows:
-            self.add("| " + " | ".join(str(c) for c in row) + " |")
-        self.add()
+from config import GPTConfig, FinetuneConfig
+from model import GPT
+from finetune import build_prompt  # noqa: E402
 
 
-# ─────────────────────── Data ───────────────────────
+# ────────────────────────── Configuration ──────────────────────────
 
-def load_wikitext2(tokenizer, max_seq_len, batch_size):
-    """Load and tokenize WikiText-2 test set."""
-    dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+CHECKPOINTS = {
+    "pretrained": "outputs/gpt-56-5m/final.pt",
+    "finetuned":  "outputs/gpt-56-5m/finetune_latest.pt",
+}
 
-    def tokenize_fn(batch):
-        texts = [t for t in batch["text"] if t.strip()]
-        encodings = tokenizer(
-            texts, truncation=True, max_length=max_seq_len, padding=False, return_tensors=None,
-        )
-        return {"input_ids": encodings["input_ids"]}
+MODEL_DESC   = "GPT (d_model=384, n_layers=10, n_heads=12, ~53M params)"
 
-    dataset = dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
-    dataset = dataset.filter(lambda x: len(x["input_ids"]) > 0)
+# Generation config per model variant
+TEXT_TEMP     = 1.0          # raw text completion
+INSTRUCT_TEMP = 0.7          # instruction-following
+MAX_NEW_TOKENS = 50
 
-    loader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=lambda batch: {
-            "input_ids": nn.utils.rnn.pad_sequence(
-                [torch.tensor(b["input_ids"]) for b in batch],
-                batch_first=True, padding_value=tokenizer.pad_token_id,
-            )
-        },
-    )
-    return loader
+# ── Test prompts ──
 
-
-# ─────────────────────── Quantitative ───────────────────────
-
-@torch.no_grad()
-def evaluate_ppl(model, loader, device):
-    """Compute perplexity on a dataset."""
-    model.eval()
-    total_loss = 0.0
-    total_tokens = 0
-    for batch in loader:
-        input_ids = batch["input_ids"].to(device)
-        logits, loss = model(input_ids, targets=input_ids)
-        n_tokens = input_ids.numel()
-        total_loss += loss.item() * n_tokens
-        total_tokens += n_tokens
-    avg_loss = total_loss / total_tokens
-    return math.exp(avg_loss), avg_loss
-
-
-# ─────────────────────── Qualitative ───────────────────────
-
-TEST_CASES = {
+RAW_PROMPTS = {
     "Story Completion": [
         "Once upon a time",
         "The little cat",
@@ -127,197 +63,245 @@ TEST_CASES = {
     ],
 }
 
-# 微调模型的 Alpaca-format 指令测试（wrap with build_prompt）
-INSTRUCTION_TEST_CASES = {
-    "Instruction: Write a Story": [
-        "Write a story about a bear.",
-        "Write a story about a rabbit that eats a carrot.",
-        "Write a story about a duck that swims in a pond and feels happy.",
-    ],
-    "Instruction: Q&A": [
-        "What is the color of the sky?",
-        "Why do birds fly south in winter?",
-        "What should you do if it rains?",
-        "Name three things you can see in a park.",
-    ],
+INSTRUCT_PROMPTS = {
+    "Instruction: Write a Story": RAW_PROMPTS["Instruction: Write a Story"],
+    "Instruction: Q&A":          RAW_PROMPTS["Instruction: Q&A"],
     "Instruction: Complex": [
         "Explain why we need to save water.",
         "Describe how a bicycle works.",
     ],
 }
 
+COMPARE_STORY       = "Once upon a time there was a little"
+COMPARE_INSTRUCTION = "Write a story about a bear."
+
+
+# ────────────────────────── Report ──────────────────────────
+
+class Report:
+    """Accumulates markdown and writes to file."""
+
+    def __init__(self):
+        self._lines = []
+
+    def add(self, text=""):
+        self._lines.append(text)
+
+    def section(self, title, level=2):
+        self._lines.append(f"{'#' * level} {title}\n")
+
+    def table(self, headers, rows):
+        self._lines.append("| " + " | ".join(headers) + " |")
+        self._lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+        for row in rows:
+            self._lines.append("| " + " | ".join(str(c) for c in row) + " |")
+        self._lines.append("")
+
+    def header(self, title):
+        self._lines.append(f"# {title}\n")
+
+    def kv(self, key, value):
+        self._lines.append(f"- **{key}:** {value}")
+
+    def save(self, path="outputs/evaluation_results.md"):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(self._lines) + "\n")
+        print(f"\nReport saved to {path}")
+
+
+# ────────────────────────── Data ──────────────────────────
+
+def load_wikitext2(tokenizer, max_seq_len, batch_size):
+    dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+
+    def tokenize_fn(batch):
+        texts = [t for t in batch["text"] if t.strip()]
+        encodings = tokenizer(
+            texts, truncation=True, max_length=max_seq_len,
+            padding=False, return_tensors=None,
+        )
+        return {"input_ids": encodings["input_ids"]}
+
+    dataset = dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
+    dataset = dataset.filter(lambda x: len(x["input_ids"]) > 0)
+
+    loader = DataLoader(
+        dataset, batch_size=batch_size, shuffle=False,
+        collate_fn=lambda batch: {
+            "input_ids": nn.utils.rnn.pad_sequence(
+                [torch.tensor(b["input_ids"]) for b in batch],
+                batch_first=True, padding_value=tokenizer.pad_token_id,
+            )
+        },
+    )
+    return loader
+
+
+# ────────────────────────── Evaluation ──────────────────────────
+
 @torch.no_grad()
-def generate_samples(model, tokenizer, device, model_name="pretrained", report=None):
-    """Generate text from categorized prompts. Writes to report."""
+def evaluate_ppl(model, loader, device):
     model.eval()
+    total_loss = 0.0
+    total_tokens = 0
+    for batch in loader:
+        input_ids = batch["input_ids"].to(device)
+        _, loss = model(input_ids, targets=input_ids)
+        n = input_ids.numel()
+        total_loss += loss.item() * n
+        total_tokens += n
+    avg_loss = total_loss / total_tokens
+    return math.exp(avg_loss), avg_loss
+
+
+@torch.no_grad()
+def generate_one(model, tokenizer, device, prompt, *,
+                 temperature=1.0, max_new_tokens=50,
+                 format_as_instruction=False):
+    """Generate a single response.
+
+    Args:
+        format_as_instruction: wrap prompt with Alpaca template.
+    Returns:
+        generated text (prompt prefix included).
+    """
+    if format_as_instruction:
+        prompt = build_prompt(prompt)
+
+    input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(device)
+    output = model.generate(input_ids, max_new_tokens=max_new_tokens,
+                            temperature=temperature)
+    return tokenizer.decode(output[0], skip_special_tokens=True)
+
+
+def run_generation_suite(model, tokenizer, device, model_name,
+                         prompt_groups, temperature, report):
+    """Run all prompt groups and write to report & stdout."""
     report.section(f"Qualitative Evaluation: {model_name}")
 
-    for group, prompts in TEST_CASES.items():
-        report.add(f"**{group}**")
+    for group, prompts in prompt_groups.items():
+        report.add(f"**{group}**\n")
         for prompt in prompts:
-            input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(device)
-            output = model.generate(input_ids, max_new_tokens=50, temperature=1.0)
-            generated = tokenizer.decode(output[0], skip_special_tokens=True)
+            generated = generate_one(model, tokenizer, device, prompt,
+                                     temperature=temperature)
             report.add(f"- **Prompt:** {prompt}")
-            report.add(f"  *Output:* {generated}")
-            report.add()
-            print(f"  [Prompt] {prompt}")
-            print(f"  [Output] {generated}")
-            print()
+            report.add(f"  *Output:* {generated}\n")
+            print(f"  [{group}] {prompt}")
+            print(f"  → {generated}\n")
 
 
-@torch.no_grad()
-def generate_samples_finetuned(model, tokenizer, device, report=None):
-    """Generate instruction-following text using Alpaca prompt format."""
-    model.eval()
-    report.section("Qualitative Evaluation: Finetuned (instruction format)")
+# ────────────────────────── Main ──────────────────────────
 
-    for group, prompts in INSTRUCTION_TEST_CASES.items():
-        report.add(f"**{group}**")
-        for prompt in prompts:
-            formatted = build_prompt(prompt)
-            input_ids = tokenizer(formatted, return_tensors="pt")["input_ids"].to(device)
-            output = model.generate(input_ids, max_new_tokens=80, temperature=0.7)
-            # decode only the generated part (skip the prompt tokens)
-            generated = tokenizer.decode(output[0][len(input_ids[0]):], skip_special_tokens=True)
-            report.add(f"- **Instruction:** {prompt}")
-            report.add(f"  *Prompt to model:* `{formatted.strip()}`")
-            report.add(f"  *Output:* {generated}")
-            report.add()
-            print(f"  [Instruction] {prompt}")
-            print(f"  [Output] {generated}")
-            print()
+def _load_model(device, variant):
+    """Load a model and its checkpoint.
 
-
-@torch.no_grad()
-def compare_models(pretrained_model, finetuned_model, tokenizer, device, report=None):
-    """Compare pretrained vs finetuned on the same prompts.
-
-    Story completion: both get raw text (pretrained's native format).
-    Instruction: pretrained gets raw text, finetuned gets Alpaca format.
+    Args:
+        variant: "pretrained" or "finetuned".
+    Returns:
+        GPT model.
     """
+    cfg = GPTConfig()
+    model = GPT(cfg).to(device)
+
+    path = CHECKPOINTS[variant]
+    state = torch.load(path, map_location=device, weights_only=True)
+    if "model_state_dict" in state:
+        state = state["model_state_dict"]
+    model.load_state_dict(state)
+    print(f"Loaded {variant} from {path}")
+    return model
+
+
+def run_pretrained(device, tokenizer, report):
+    model = _load_model(device, "pretrained")
+
+    # Quantitative
+    report.section("Quantitative: WikiText-2 Perplexity")
+    loader = load_wikitext2(tokenizer, GPTConfig.max_seq_len, batch_size=32)
+    ppl, avg_loss = evaluate_ppl(model, loader, device)
+    report.kv("Loss", f"{avg_loss:.4f}")
+    report.kv("Perplexity", f"{ppl:.2f}")
+    report.add()
+    print(f"WikiText-2 → loss: {avg_loss:.4f}, PPL: {ppl:.2f}")
+
+    # Qualitative
+    run_generation_suite(model, tokenizer, device, "Pretrained",
+                         RAW_PROMPTS, temperature=TEXT_TEMP, report=report)
+
+
+def run_finetuned(device, tokenizer, report):
+    model = _load_model(device, "finetuned")
+    run_generation_suite(model, tokenizer, device,
+                         "Finetuned (instruction format)",
+                         INSTRUCT_PROMPTS, temperature=INSTRUCT_TEMP,
+                         report=report)
+
+
+def run_compare(device, tokenizer, report):
+    pretrained = _load_model(device, "pretrained")
+    finetuned  = _load_model(device, "finetuned")
+
+    # ── preprint runs ──
+    run_generation_suite(pretrained, tokenizer, device, "Pretrained",
+                         RAW_PROMPTS, temperature=TEXT_TEMP, report=report)
+    run_generation_suite(finetuned, tokenizer, device,
+                         "Finetuned (instruction format)",
+                         INSTRUCT_PROMPTS, temperature=INSTRUCT_TEMP,
+                         report=report)
+
+    # ── side-by-side comparison ──
     report.section("Comparison: Pretrained vs Finetuned")
 
-    # Story completion: raw text for both
-    prompt = "Once upon a time there was a little"
-    report.add(f"**Story completion:** \"{prompt}\"")
-    report.add()
-    report.add("| Model (input format) | Output |")
-    report.add("|---|---|")
-    for model, name, fmt in [
-        (pretrained_model, "Pretrained (raw text)", None),
-        (finetuned_model, "Finetuned (raw text)", None),
-    ]:
-        input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(device)
-        output = model.generate(input_ids, max_new_tokens=50, temperature=1.0)
-        generated = tokenizer.decode(output[0], skip_special_tokens=True)
-        report.add(f"| {name} | {generated} |")
-        print(f"  [{name}] {generated}")
-    report.add()
+    # Story completion: both raw text
+    report.add(f"**Story completion:** \"{COMPARE_STORY}\"\n")
+    report.table(["Model", "Output"], [
+        ["Pretrained", generate_one(pretrained, tokenizer, device,
+                                     COMPARE_STORY, temperature=TEXT_TEMP)],
+        ["Finetuned",  generate_one(finetuned,  tokenizer, device,
+                                     COMPARE_STORY, temperature=TEXT_TEMP)],
+    ])
 
-    # Instruction: raw text for pretrained, Alpaca format for finetuned
-    instruction = "Write a story about a bear."
-    report.add(f"**Instruction:** \"{instruction}\"")
-    report.add()
-    report.add("| Model (input format) | Output |")
-    report.add("|---|---|")
+    # Instruction: pretrained raw, finetuned Alpaca
+    report.add(f"**Instruction:** \"{COMPARE_INSTRUCTION}\"\n")
+    report.table(["Model", "Output"], [
+        ["Pretrained (raw text)",
+         generate_one(pretrained, tokenizer, device,
+                      COMPARE_INSTRUCTION, temperature=TEXT_TEMP)],
+        ["Finetuned (Alpaca format)",
+         generate_one(finetuned,  tokenizer, device,
+                      COMPARE_INSTRUCTION, temperature=INSTRUCT_TEMP,
+                      format_as_instruction=True)],
+    ])
+    print("Comparison done.")
 
-    # pretrained: raw text
-    input_ids = tokenizer(instruction, return_tensors="pt")["input_ids"].to(device)
-    output = pretrained_model.generate(input_ids, max_new_tokens=50, temperature=1.0)
-    generated = tokenizer.decode(output[0], skip_special_tokens=True)
-    report.add(f"| Pretrained (raw text) | {generated} |")
-    print(f"  [Pretrained] {generated}")
-
-    # finetuned: Alpaca format
-    formatted = build_prompt(instruction)
-    input_ids = tokenizer(formatted, return_tensors="pt")["input_ids"].to(device)
-    output = finetuned_model.generate(input_ids, max_new_tokens=50, temperature=0.7)
-    generated = tokenizer.decode(output[0][len(input_ids[0]):], skip_special_tokens=True)
-    report.add(f"| Finetuned (Alpaca format) | {generated} |")
-    print(f"  [Finetuned, Alpaca format] {generated}")
-    report.add()
-
-
-# ─────────────────────── Main ───────────────────────
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     mode = sys.argv[1] if len(sys.argv) > 1 else "pretrained"
-    print(f"Using device: {device}")
-    print(f"Mode: {mode}")
+    print(f"Device: {device}  |  Mode: {mode}")
 
     report = Report()
-    report.section(f"Evaluation Results ({mode})", level=1)
-    report.add(f"- **Date:** 2026-07-24")
-    report.add(f"- **Model:** GPT (d_model=384, n_layers=10, n_heads=12, ~53M params)")
-    report.add(f"- **Device:** {device}")
+    report.header(f"Evaluation Results ({mode})")
+    report.kv("Date", "2026-07-24")
+    report.kv("Model", MODEL_DESC)
+    report.kv("Device", str(device))
     report.add()
 
-    model_cfg = GPTConfig()
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     tokenizer.pad_token = tokenizer.eos_token
 
     if mode == "pretrained":
-        model = GPT(model_cfg).to(device)
-        state = torch.load("outputs/gpt-56-5m/final.pt", map_location=device, weights_only=True)
-        model.load_state_dict(state)
-        print("Checkpoint loaded: pretrained")
-        report.add(f"- **Model:** Pretrained")
-        report.add()
-
-        # Quantitative
-        report.section("Quantitative: WikiText-2 Perplexity")
-        loader = load_wikitext2(tokenizer, model_cfg.max_seq_len, 32)
-        ppl, avg_loss = evaluate_ppl(model, loader, device)
-        report.add(f"- **Loss:** {avg_loss:.4f}")
-        report.add(f"- **Perplexity:** {ppl:.2f}")
-        report.add()
-        print(f"WikiText-2 → loss: {avg_loss:.4f}, PPL: {ppl:.2f}")
-
-        # Qualitative
-        generate_samples(model, tokenizer, device, "Pretrained", report)
-
+        run_pretrained(device, tokenizer, report)
     elif mode == "finetuned":
-        model = GPT(model_cfg).to(device)
-        state = torch.load("outputs/gpt-56-5m/finetune_latest.pt", map_location=device, weights_only=True)
-        if "model_state_dict" in state:
-            state = state["model_state_dict"]
-        model.load_state_dict(state)
-        print("Checkpoint loaded: finetuned")
-        report.add(f"- **Model:** Finetuned (on Alpaca)")
-
-        # Also show raw-text story completion to confirm base ability
-        report.add(f"- *Note: finetuned prompts use Alpaca instruction format (`### Instruction: ... ### Response:`)*")
-        report.add()
-        generate_samples_finetuned(model, tokenizer, device, report)
-
+        run_finetuned(device, tokenizer, report)
     elif mode == "compare":
-        pretrained = GPT(model_cfg).to(device)
-        pretrained.load_state_dict(torch.load(
-            "outputs/gpt-56-5m/final.pt", map_location=device, weights_only=True
-        ))
-        print("Checkpoint loaded: pretrained")
-
-        finetuned = GPT(model_cfg).to(device)
-        state = torch.load("outputs/gpt-56-5m/finetune_latest.pt", map_location=device, weights_only=True)
-        if "model_state_dict" in state:
-            state = state["model_state_dict"]
-        finetuned.load_state_dict(state)
-        print("Checkpoint loaded: finetuned")
-
-        report.add(f"- **Models:** Pretrained & Finetuned")
-        report.add()
-
-        generate_samples(pretrained, tokenizer, device, "Pretrained", report)
-        generate_samples_finetuned(finetuned, tokenizer, device, report)
-        compare_models(pretrained, finetuned, tokenizer, device, report)
+        run_compare(device, tokenizer, report)
     else:
         print(f"Usage: python src/evaluate.py [pretrained|finetuned|compare]")
         return
 
     report.save()
-    print("Evaluation complete.")
 
 
 if __name__ == "__main__":
