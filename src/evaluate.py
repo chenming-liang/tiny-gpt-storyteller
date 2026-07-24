@@ -164,7 +164,7 @@ def main():
     if mode == "pretrained":
         model = GPT(model_cfg).to(device)
         print(f"Model parameters: {count_parameters(model):.2f}M")
-        state = torch.load("outputs/pretrained/final.pt", map_location=device, weights_only=True)
+        state = torch.load("outputs/gpt-56-5m/final.pt", map_location=device, weights_only=True)
         model.load_state_dict(state)
         print("Checkpoint loaded: pretrained")
 
@@ -190,7 +190,7 @@ def main():
     elif mode == "compare":
         pretrained = GPT(model_cfg).to(device)
         pretrained.load_state_dict(torch.load(
-            "outputs/pretrained/final.pt", map_location=device, weights_only=True
+            "outputs/gpt-56-5m/final.pt", map_location=device, weights_only=True
         ))
 
         ft_cfg = FinetuneConfig()
