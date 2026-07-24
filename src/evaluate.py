@@ -12,8 +12,6 @@ import math
 import os
 import sys
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
@@ -111,62 +109,27 @@ class Report:
 
 # ────────────────────────── Data ──────────────────────────
 
-def load_wikitext2(tokenizer, max_seq_len, batch_size):
-    """Load WikiText-2 test set (generic text evaluation).
-
-    Note: for TinyStories-trained models, use load_tinystories_val()
-    for in-domain evaluation instead.
-    """
-    dataset = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1", split="test")
-
-    return _prepare_text_dataset(dataset, tokenizer, max_seq_len, batch_size)
-
-
-def load_tinystories_val(tokenizer, max_seq_len, batch_size):
-    """Load TinyStories validation set (in-domain evaluation)."""
-    dataset = load_dataset("roneneldan/TinyStories", split="validation")
-    return _prepare_text_dataset(dataset, tokenizer, max_seq_len, batch_size)
-
-
-def _prepare_text_dataset(dataset, tokenizer, max_seq_len, batch_size):
-    """Tokenize a text dataset and return a DataLoader."""
-
-    def tokenize_fn(examples):
-        texts = examples["text"]
-        encodings = tokenizer(
-            texts, truncation=True, max_length=max_seq_len,
-            padding=False, return_tensors=None,
-        )
-        return {"input_ids": encodings["input_ids"]}
-
-    dataset = dataset.map(tokenize_fn, batched=True, remove_columns=dataset.column_names)
-    dataset = dataset.filter(lambda x: len(x["input_ids"]) > 0)
-
-    loader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=lambda batch: {
-            "input_ids": nn.utils.rnn.pad_sequence(
-                [torch.tensor(b["input_ids"]) for b in batch],
-                batch_first=True, padding_value=tokenizer.pad_token_id,
-            )
-        },
-    )
-    return loader
+# (evaluate_ppl now works directly on HuggingFace datasets — no loader needed.)
 
 
 # ────────────────────────── Evaluation ──────────────────────────
 
 @torch.no_grad()
-def evaluate_ppl(model, loader, device):
+def evaluate_ppl(model, dataset, tokenizer, device, max_seq_len=256):
+    """Compute perplexity on a tokenized text dataset (iterates sample by sample)."""
     model.eval()
     total_loss = 0.0
     total_tokens = 0
-    for batch in loader:
-        input_ids = batch["input_ids"].to(device)
+    for example in dataset:
+        tokens = tokenizer(
+            example["text"], truncation=True, max_length=max_seq_len,
+        )["input_ids"]
+        if len(tokens) < 2:
+            continue
+        input_ids = torch.tensor(tokens, dtype=torch.long, device=device).unsqueeze(0)
         _, loss = model(input_ids, targets=input_ids)
-        n = input_ids.numel()
-        total_loss += loss.item() * n
-        total_tokens += n
+        total_loss += loss.item() * len(tokens)
+        total_tokens += len(tokens)
     avg_loss = total_loss / total_tokens
     return math.exp(avg_loss), avg_loss
 
@@ -235,8 +198,9 @@ def run_pretrained(device, tokenizer, report):
 
     # Quantitative — in-domain (TinyStories validation)
     report.section("Quantitative: TinyStories Validation Perplexity")
-    loader = load_tinystories_val(tokenizer, GPTConfig.max_seq_len, batch_size=32)
-    ppl, avg_loss = evaluate_ppl(model, loader, device)
+    dataset = load_dataset("roneneldan/TinyStories", split="validation")
+    ppl, avg_loss = evaluate_ppl(model, dataset, tokenizer, device,
+                                 GPTConfig.max_seq_len)
     report.kv("Loss", f"{avg_loss:.4f}")
     report.kv("Perplexity", f"{ppl:.2f}")
     report.add()
@@ -244,8 +208,9 @@ def run_pretrained(device, tokenizer, report):
 
     # Quantitative — out-of-domain (WikiText-2)
     report.section("Quantitative: WikiText-2 Perplexity")
-    loader = load_wikitext2(tokenizer, GPTConfig.max_seq_len, batch_size=32)
-    ppl, avg_loss = evaluate_ppl(model, loader, device)
+    dataset = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1", split="test")
+    ppl, avg_loss = evaluate_ppl(model, dataset, tokenizer, device,
+                                 GPTConfig.max_seq_len)
     report.kv("Loss", f"{avg_loss:.4f}")
     report.kv("Perplexity", f"{ppl:.2f}")
     report.add()
