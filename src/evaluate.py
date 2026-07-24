@@ -17,6 +17,7 @@ import sys
 
 from config import GPTConfig, TrainConfig, FinetuneConfig
 from model import GPT, count_parameters
+from finetune import build_prompt
 
 
 # ─────────────────────── Helpers ───────────────────────
@@ -126,11 +127,24 @@ TEST_CASES = {
     ],
 }
 
-COMPARISON_PROMPTS = [
-    ("Story prompt", "Once upon a time there was a little"),
-    ("Instruction", "Write a story about a bear."),
-]
-
+# 微调模型的 Alpaca-format 指令测试（wrap with build_prompt）
+INSTRUCTION_TEST_CASES = {
+    "Instruction: Write a Story": [
+        "Write a story about a bear.",
+        "Write a story about a rabbit that eats a carrot.",
+        "Write a story about a duck that swims in a pond and feels happy.",
+    ],
+    "Instruction: Q&A": [
+        "What is the color of the sky?",
+        "Why do birds fly south in winter?",
+        "What should you do if it rains?",
+        "Name three things you can see in a park.",
+    ],
+    "Instruction: Complex": [
+        "Explain why we need to save water.",
+        "Describe how a bicycle works.",
+    ],
+}
 
 @torch.no_grad()
 def generate_samples(model, tokenizer, device, model_name="pretrained", report=None):
@@ -147,30 +161,81 @@ def generate_samples(model, tokenizer, device, model_name="pretrained", report=N
             report.add(f"- **Prompt:** {prompt}")
             report.add(f"  *Output:* {generated}")
             report.add()
-            # also print to console
             print(f"  [Prompt] {prompt}")
             print(f"  [Output] {generated}")
             print()
 
 
 @torch.no_grad()
+def generate_samples_finetuned(model, tokenizer, device, report=None):
+    """Generate instruction-following text using Alpaca prompt format."""
+    model.eval()
+    report.section("Qualitative Evaluation: Finetuned (instruction format)")
+
+    for group, prompts in INSTRUCTION_TEST_CASES.items():
+        report.add(f"**{group}**")
+        for prompt in prompts:
+            formatted = build_prompt(prompt)
+            input_ids = tokenizer(formatted, return_tensors="pt")["input_ids"].to(device)
+            output = model.generate(input_ids, max_new_tokens=80, temperature=1.0)
+            generated = tokenizer.decode(output[0], skip_special_tokens=True)
+            report.add(f"- **Instruction:** {prompt}")
+            report.add(f"  *Prompt to model:* `{formatted.strip()}`")
+            report.add(f"  *Output:* {generated}")
+            report.add()
+            print(f"  [Instruction] {prompt}")
+            print(f"  [Output] {generated}")
+            print()
+
+
+@torch.no_grad()
 def compare_models(pretrained_model, finetuned_model, tokenizer, device, report=None):
-    """Compare pretrained vs finetuned on same prompts. Writes to report."""
+    """Compare pretrained vs finetuned on the same prompts.
+
+    Story completion: both get raw text (pretrained's native format).
+    Instruction: pretrained gets raw text, finetuned gets Alpaca format.
+    """
     report.section("Comparison: Pretrained vs Finetuned")
 
-    for category, prompt in COMPARISON_PROMPTS:
-        report.add(f"**{category}:** \"{prompt}\"")
-        report.add()
-        report.add("| Model | Output |")
-        report.add("|---|---|")
-
+    # Story completion: raw text for both
+    prompt = "Once upon a time there was a little"
+    report.add(f"**Story completion:** \"{prompt}\"")
+    report.add()
+    report.add("| Model (input format) | Output |")
+    report.add("|---|---|")
+    for model, name, fmt in [
+        (pretrained_model, "Pretrained (raw text)", None),
+        (finetuned_model, "Finetuned (raw text)", None),
+    ]:
         input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(device)
-        for model, name in [(pretrained_model, "Pretrained"), (finetuned_model, "Finetuned")]:
-            output = model.generate(input_ids, max_new_tokens=50, temperature=1.0)
-            generated = tokenizer.decode(output[0], skip_special_tokens=True)
-            report.add(f"| {name} | {generated} |")
-            print(f"  [{name}] {generated}")
-        report.add()
+        output = model.generate(input_ids, max_new_tokens=50, temperature=1.0)
+        generated = tokenizer.decode(output[0], skip_special_tokens=True)
+        report.add(f"| {name} | {generated} |")
+        print(f"  [{name}] {generated}")
+    report.add()
+
+    # Instruction: raw text for pretrained, Alpaca format for finetuned
+    instruction = "Write a story about a bear."
+    report.add(f"**Instruction:** \"{instruction}\"")
+    report.add()
+    report.add("| Model (input format) | Output |")
+    report.add("|---|---|")
+
+    # pretrained: raw text
+    input_ids = tokenizer(instruction, return_tensors="pt")["input_ids"].to(device)
+    output = pretrained_model.generate(input_ids, max_new_tokens=50, temperature=1.0)
+    generated = tokenizer.decode(output[0], skip_special_tokens=True)
+    report.add(f"| Pretrained (raw text) | {generated} |")
+    print(f"  [Pretrained] {generated}")
+
+    # finetuned: Alpaca format
+    formatted = build_prompt(instruction)
+    input_ids = tokenizer(formatted, return_tensors="pt")["input_ids"].to(device)
+    output = finetuned_model.generate(input_ids, max_new_tokens=50, temperature=1.0)
+    generated = tokenizer.decode(output[0], skip_special_tokens=True)
+    report.add(f"| Finetuned (Alpaca format) | {generated} |")
+    print(f"  [Finetuned, Alpaca format] {generated}")
+    report.add()
 
 
 # ─────────────────────── Main ───────────────────────
@@ -220,9 +285,11 @@ def main():
         model.load_state_dict(state)
         print("Checkpoint loaded: finetuned")
         report.add(f"- **Model:** Finetuned (on Alpaca)")
-        report.add()
 
-        generate_samples(model, tokenizer, device, "Finetuned", report)
+        # Also show raw-text story completion to confirm base ability
+        report.add(f"- *Note: finetuned prompts use Alpaca instruction format (`### Instruction: ... ### Response:`)*")
+        report.add()
+        generate_samples_finetuned(model, tokenizer, device, report)
 
     elif mode == "compare":
         pretrained = GPT(model_cfg).to(device)
@@ -242,7 +309,7 @@ def main():
         report.add()
 
         generate_samples(pretrained, tokenizer, device, "Pretrained", report)
-        generate_samples(finetuned, tokenizer, device, "Finetuned", report)
+        generate_samples_finetuned(finetuned, tokenizer, device, report)
         compare_models(pretrained, finetuned, tokenizer, device, report)
     else:
         print(f"Usage: python src/evaluate.py [pretrained|finetuned|compare]")
