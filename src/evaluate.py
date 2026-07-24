@@ -177,8 +177,9 @@ def generate_samples_finetuned(model, tokenizer, device, report=None):
         for prompt in prompts:
             formatted = build_prompt(prompt)
             input_ids = tokenizer(formatted, return_tensors="pt")["input_ids"].to(device)
-            output = model.generate(input_ids, max_new_tokens=80, temperature=1.0)
-            generated = tokenizer.decode(output[0], skip_special_tokens=True)
+            output = model.generate(input_ids, max_new_tokens=80, temperature=0.7)
+            # decode only the generated part (skip the prompt tokens)
+            generated = tokenizer.decode(output[0][len(input_ids[0]):], skip_special_tokens=True)
             report.add(f"- **Instruction:** {prompt}")
             report.add(f"  *Prompt to model:* `{formatted.strip()}`")
             report.add(f"  *Output:* {generated}")
@@ -231,8 +232,8 @@ def compare_models(pretrained_model, finetuned_model, tokenizer, device, report=
     # finetuned: Alpaca format
     formatted = build_prompt(instruction)
     input_ids = tokenizer(formatted, return_tensors="pt")["input_ids"].to(device)
-    output = finetuned_model.generate(input_ids, max_new_tokens=50, temperature=1.0)
-    generated = tokenizer.decode(output[0], skip_special_tokens=True)
+    output = finetuned_model.generate(input_ids, max_new_tokens=50, temperature=0.7)
+    generated = tokenizer.decode(output[0][len(input_ids[0]):], skip_special_tokens=True)
     report.add(f"| Finetuned (Alpaca format) | {generated} |")
     print(f"  [Finetuned, Alpaca format] {generated}")
     report.add()
