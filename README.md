@@ -6,11 +6,8 @@
 
 ```
 ├── src/                # 训练代码
-├── report/
-│   ├── report.tex      # 技术报告（NeurIPS 格式）
-│   ├── pretrain_loss.png
-│   └── finetune_loss.png
-└── .gitignore
+└── report/             # 技术报告
+    └── report.tex      # NeurIPS 格式
 ```
 
 ## 关键结果
