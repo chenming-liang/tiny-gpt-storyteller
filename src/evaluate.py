@@ -110,7 +110,7 @@ class Report:
 
 # ────────────────────────── Data ──────────────────────────
 
-# (evaluate_ppl now works directly on HuggingFace datasets — no loader needed.)
+# (No separate data loader needed — evaluate_ppl works directly on HF datasets.)
 
 
 # ────────────────────────── Evaluation ──────────────────────────

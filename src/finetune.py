@@ -1,9 +1,6 @@
 """
 Instruction finetuning script for GPT on Alpaca dataset.
 Usage: python src/finetune.py
-
-── 需要你手写的部分 ──
-1. generate_dialog: 微调后与模型对话
 """
 import os
 import math
@@ -34,7 +31,7 @@ def _build_collate_fn(pad_token_id):
 # ─────────────────────────── Data ───────────────────────────
 
 def format_prompt(example):
-    """将 Alpaca 数据拼接成完整文本（prompt + response）。"""
+    """Format Alpaca example into full text (instruction + response)."""
     if example["input"]:
         return (
             f"### Instruction:\n{example['instruction']}\n\n"
@@ -87,10 +84,8 @@ class AlpacaDataset(Dataset):
         y = tokens[1:]
 
         if self.mask_instruction:
-            # 构造 prompt 部分（不含 output）并算出 token 长度
             prompt_text = build_prompt(example["instruction"], example["input"])
             prompt_len = len(self.tokenizer(prompt_text, truncation=False)["input_ids"])
-            # 将 prompt 对应的 y 位置设为 -1
             for i in range(min(prompt_len - 1, len(y))):
                 y[i] = -1
 
@@ -157,25 +152,13 @@ class Finetuner:
         )
 
     def _load_pretrained(self):
-        """
-        TODO: 加载预训练好的模型权重
-
-        预训练权重路径: outputs/{model_name}/final.pt
-        注意: 这个文件只保存了 model.state_dict()，没有 optimizer 状态
-
-        提示:
-        - 检查文件是否存在，不存在则警告并跳过
-        - 用 torch.load(..., map_location=self.device) 加载
-        - 用 self.model.load_state_dict(...) 载入
-        """
-        # ===== 你的代码从这里开始 =====
+        """Load pretrained weights."""
         path = os.path.join('outputs', self.model_name, 'final.pt')
         if not os.path.exists(path):
             print(f"Warning: no pretrained weights found at {path}, starting from scratch")
             return
         model_state = torch.load(path, map_location=self.device)
         self.model.load_state_dict(model_state)
-        # ===== 你的代码到这里结束 =====
 
     def train_epoch(self, dataloader, epoch: int):
         """Run one epoch of finetuning."""
@@ -246,23 +229,12 @@ class Finetuner:
 
     @torch.no_grad()
     def generate_dialog(self, instruction, input_text="", max_new_tokens=100, temperature=1.0):
-        """
-        TODO: 与微调后的模型对话
-
-        1. 用 build_prompt 构造 prompt（不含 output）
-        2. 用 self.tokenizer 编码
-        3. 调用 self.model.generate() 生成回复
-        4. 解码并打印结果
-        """
+        """Generate a response for the given instruction."""
         self.model.eval()
-
-        # ===== 你的代码从这里开始 =====
         prompt = build_prompt(instruction, input_text)
         tokens = self.tokenizer(prompt, return_tensors="pt")["input_ids"].to(self.device)
         res_tok = self.model.generate(tokens, max_new_tokens=max_new_tokens, temperature=temperature)
         response = self.tokenizer.decode(res_tok[0][len(tokens[0]):], skip_special_tokens=True)
-        # ===== 你的代码到这里结束 =====
-
         self.model.train()
         return response
 
@@ -315,7 +287,6 @@ def main():
     )
 
     finetuner = Finetuner(model, model_cfg, ft_cfg, device, model_name)
-    # 把 tokenizer 挂到 finetuner 上，供 generate_dialog 使用
     finetuner.tokenizer = tokenizer
 
     # resume from checkpoint if exists
@@ -332,13 +303,10 @@ def main():
         if wandb.run:
             wandb.log({"train/epoch_loss": avg_loss, "train/epoch_ppl": ppl, "epoch": epoch})
 
-        # Generate sample responses after each epoch (难度递增)
+        # Generate sample responses after each epoch
         tasks = [
-            # Level 1: 简单故事
             "Write a story about a bear.",
-            # Level 2: 极简二选一常识
             "Which one is correct? A: The sun makes the sky bright. B: The sun makes the sky black.",
-            # Level 3: 超越能力边界 — 几何/多步推理，模型必然失败
             "Answer the question directly: If a triangle has sides of length 3, 4, and 5, is the angle opposite to the side of length 5 acute, right, or obtuse? Explain why using the Pythagorean theorem.",
         ]
         for task in tasks:

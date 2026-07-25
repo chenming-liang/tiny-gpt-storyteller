@@ -1,5 +1,5 @@
 """
-GPT model for TinyStories pretraining (~1.2M params).
+GPT model for TinyStories pretraining (~56.5M params).
 Reference: https://github.com/karpathy/minGPT
 """
 import math
@@ -31,12 +31,11 @@ class CausalSelfAttention(nn.Module):
         q, k, v = self.c_attn(x).split(self.d_k * self.n_heads, dim=-1)
         q = q.view(B, T, self.n_heads, self.d_k).transpose(1, 2)
         k = k.view(B, T, self.n_heads, self.d_k).transpose(1, 2)
-        v = v.view(B, T, self.n_heads, self.d_k).transpose(1, 2) # (B, n_heads, T, d_k)
+        v = v.view(B, T, self.n_heads, self.d_k).transpose(1, 2)
 
-        # TODO: scaled dot-product attention + output projection
         mul_qk = q @ k.transpose(-1, -2) / math.sqrt(self.d_k)
-        mul_qk = mul_qk.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf")) # (B, n_heads, T, T)
-        mh_att = self.dropout(torch.softmax(mul_qk, dim=-1)) @ v # (B, n_heads, T, d_k)
+        mul_qk = mul_qk.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
+        mh_att = self.dropout(torch.softmax(mul_qk, dim=-1)) @ v
         att = self.c_proj(mh_att.transpose(1, 2).contiguous().view(B, T, C))
         return self.dropout(att)
 
@@ -46,7 +45,6 @@ class MLP(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        # TODO: define two linear layers (d_model -> 4*d_model -> d_model) with GELU
         self.fc = nn.Sequential(
             nn.Linear(config.d_model, 4 * config.d_model),
             nn.GELU(),
@@ -54,7 +52,6 @@ class MLP(nn.Module):
         )
 
     def forward(self, x):
-        # TODO: linear -> gelu -> linear
         return self.fc(x)
 
 class TransformerBlock(nn.Module):
@@ -62,15 +59,12 @@ class TransformerBlock(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        # TODO: init layernorm, attention, mlp
         self.ln1 = nn.LayerNorm(config.d_model)
         self.attn = CausalSelfAttention(config)
         self.ln2 = nn.LayerNorm(config.d_model)
         self.mlp = MLP(config)
 
-
     def forward(self, x):
-        # TODO: pre-norm residual blocks (attn + mlp)
         x = x + self.attn(self.ln1(x))
         x = x + self.mlp(self.ln2(x))
         return x
@@ -81,8 +75,6 @@ class GPT(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-
-        # TODO: token embedding + position embedding
         self.config = config
         self.tok_emb = nn.Embedding(config.vocab_size, config.d_model)
         self.pos_emb = nn.Embedding(config.max_seq_len, config.d_model)
@@ -102,20 +94,15 @@ class GPT(nn.Module):
 
     def forward(self, idx, targets=None):
         B, T = idx.shape
-        pos = torch.arange(0, T, dtype=torch.long, device=idx.device).unsqueeze(0) # (1, T)
-        tok = idx
-        pos = self.pos_emb(pos) # (1, T, d_model)
-        tok = self.tok_emb(tok) # (B, T, d_model)
-        x = self.dropout(pos + tok) # (B, T, d_model)
+        pos = torch.arange(0, T, dtype=torch.long, device=idx.device).unsqueeze(0)
+        x = self.dropout(self.pos_emb(pos) + self.tok_emb(idx))
 
         for b in self.blocks:
             x = b(x)
         logits = self.proj(self.f_ln(x))
-        # TODO: embedding lookup -> transformer blocks -> lm_head -> logits
 
         loss = None
         if targets is not None:
-            # TODO: cross-entropy loss
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
 
         return logits, loss

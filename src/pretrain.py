@@ -1,11 +1,6 @@
 """
 Pretraining script for GPT on TinyStories.
 Usage: python src/pretrain.py
-
-── 需要你手写的部分 ──
-1. TinyStoriesDataset.__iter__: causal LM 的 x 和 y 如何错位构造
-2. Trainer._configure_optimizers: 权重衰减分组逻辑
-3. Trainer.train_epoch: 训练循环核心（forward, backward, optimizer step）
 """
 import os
 import math
@@ -44,33 +39,28 @@ class TinyStoriesDataset(IterableDataset):
                 max_length=self.max_seq_len,
                 return_length=False,
             )["input_ids"]
-
-            # TODO: causal LM 需要输入和目标错一位
-            # 用 tokens 构造 x（输入）和 y（目标），每个位置预测下一个 token
-            # x 和 y 的长度关系是什么？为什么？
             x, y = tokens[:-1], tokens[1:]
-
             yield torch.tensor(x, dtype=torch.long), torch.tensor(y, dtype=torch.long)
 
 
 # ─────────────────────────── Tokenizer ───────────────────────────
 
 def load_tokenizer(vocab_size: int = 50257):
-    """Load GPT-2 tokenizer (use directly, no training needed)."""
+    """Load GPT-2 tokenizer."""
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     tokenizer.pad_token = tokenizer.eos_token
     return tokenizer
 
 
 def _build_collate_fn(pad_token_id):
-    """Dynamic padding within batch. 基础设施，直接抄就行。"""
+    """Dynamic padding within batch."""
     def collate_fn(batch):
         x_batch, y_batch = zip(*batch)
         x_padded = nn.utils.rnn.pad_sequence(
             x_batch, batch_first=True, padding_value=pad_token_id
         )
         y_padded = nn.utils.rnn.pad_sequence(
-            y_batch, batch_first=True, padding_value=-1  # -1 在 cross_entropy 中被忽略
+            y_batch, batch_first=True, padding_value=-1
         )
         return x_padded, y_padded
     return collate_fn
@@ -101,17 +91,7 @@ class Trainer:
         )
 
     def _configure_optimizers(self):
-        """
-        TODO: 将参数分为"应用权重衰减"和"不应用权重衰减"两组
-
-        规则：
-        - Linear 层的 weight → 应用权重衰减
-        - 所有 bias → 不应用权重衰减
-        - LayerNorm 和 Embedding 的 weight → 不应用权重衰减
-
-        提示：用 named_modules() + named_parameters() 遍历，
-             用 isinstance(m, nn.Linear) / nn.LayerNorm / nn.Embedding 判断模块类型
-        """
+        """Separate parameters into weight-decay and no-decay groups."""
         decay = set()
         no_decay = set()
 
@@ -153,13 +133,6 @@ class Trainer:
                 break
             x, y = x.to(self.device), y.to(self.device)
 
-            # TODO: 训练循环核心
-            # 1. 清空梯度
-            # 2. 混合精度前向传播 (with autocast)
-            # 3. 反向传播
-            # 4. 梯度裁剪 (max_norm=1.0)
-            # 5. 优化器 step 和 scaler 更新
-            # 6. LR scheduler step
             self.optimizer.zero_grad()
             with autocast(device_type=str(self.device), enabled=self.cfg.use_amp):
                 _, loss = self.model(x, targets=y)
@@ -260,7 +233,7 @@ def main():
         train_dataset,
         batch_size=train_cfg.batch_size,
         collate_fn=_build_collate_fn(tokenizer.pad_token_id),
-        num_workers=0,     # streaming dataset: 不支持多进程
+        num_workers=0,
         pin_memory=True,
     )
 

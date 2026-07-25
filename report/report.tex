@@ -5,6 +5,10 @@
 
 % NeurIPS 2023 style
 \usepackage[final]{neurips}
+% Remove NeurIPS conference footer
+\makeatletter
+\renewcommand{\@noticestring}{}
+\makeatother
 % Chinese paragraph indent (NeurIPS sets it to 0)
 \setlength{\parindent}{2em}
 
@@ -107,7 +111,7 @@
     $2$   & $1.72$          & $5.58$          \\
     $3$   & $1.55$          & $4.69$          \\
     $4$   & $1.44$          & $4.20$          \\
-    $5$   & $\pmb{1.37}$ & $\pmb{3.93}$ \\
+    $5$   & $\boldsymbol{1.37}$ & $\boldsymbol{3.93}$ \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -179,7 +183,7 @@ Loss 曲线和 PPL 曲线如图~\ref{fig:pretrain_loss} 所示。
     $2$   & $4.17$          & $64.84$        \\
     $3$   & $3.81$          & $45.37$        \\
     $4$   & $3.62$          & $37.51$        \\
-    $5$   & $\pmb{3.52}$ & $\pmb{33.76}$ \\
+    $5$   & $\boldsymbol{3.52}$ & $\boldsymbol{33.76}$ \\
     \bottomrule
   \end{tabular}
 \end{table}
