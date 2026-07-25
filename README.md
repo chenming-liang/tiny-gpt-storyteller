@@ -10,7 +10,6 @@
 │   ├── report.tex      # 技术报告（NeurIPS 格式）
 │   ├── pretrain_loss.png
 │   └── finetune_loss.png
-├── my_notes/           # 个人笔记
 └── .gitignore
 ```
 
