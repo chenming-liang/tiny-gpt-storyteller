@@ -11,5 +11,6 @@ PLAN.md
 project.md
 my_notes/
 .vscode/
+notebooks/
 report/*.md
 *.pdf
