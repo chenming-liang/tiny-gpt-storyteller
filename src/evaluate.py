@@ -31,7 +31,7 @@ CHECKPOINTS = {
 MODEL_DESC   = "GPT (d_model=384, n_layers=10, n_heads=12, ~53M params)"
 
 # Generation config per model variant
-TEXT_TEMP     = 1.0          # raw text completion
+TEXT_TEMP     = 0.7          # raw text completion
 INSTRUCT_TEMP = 0.7          # instruction-following
 
 # ── Test prompts ──
