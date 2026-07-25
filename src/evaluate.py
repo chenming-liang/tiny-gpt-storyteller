@@ -35,14 +35,23 @@ TEXT_TEMP     = 1.0          # raw text completion
 INSTRUCT_TEMP = 0.7          # instruction-following
 
 # ── Test prompts ──
-
-RAW_PROMPTS = {
+# 预训练模型专用：所有 prompt 都以裸文本输入（模型做续写）
+PRETRAIN_PROMPTS = {
     "Story Completion": [
         "Once upon a time there was a little girl named Lily. She loved to explore the park near her house. One sunny afternoon, she saw a ladder leaning against a big tree. Curious about what was at the top, she started to climb. But the ladder began to wobble...",
         "Once upon a time there was a little boy named Max. Max loved to help his family in the garden. One day, he dug a deep hole and found a mysterious wooden box covered in dirt. He carefully opened it and saw...",
         "Once upon a time there was a very kind wizard. He lived in a tall tower and spent his days helping the villagers nearby. One morning, he heard a knock on the door and found a tiny baby dragon on his doorstep...",
         "Once upon a time there was a brave little duck named Dottie. Dottie wasn't afraid of the dark, or thunderstorms, or even the big fish who lived in the pond. But one day, Dottie had to cross a very wobbly bridge to get to her nest. As she stepped onto the bridge...",
     ],
+    "Factual Completion": [
+        "The sun rises in the",
+        "Water is made of",
+        "The capital of France is",
+    ],
+}
+
+# 微调模型专用：所有 prompt 以 Alpaca 指令格式输入
+FINETUNE_PROMPTS = {
     "Instruction: Write a Story": [
         "Write a story about a bear.",
         "Write a story about a rabbit that eats a carrot.",
@@ -54,22 +63,13 @@ RAW_PROMPTS = {
         "What should you do if it rains?",
         "Name three things you can see in a park.",
     ],
-    "Factual Completion": [
-        "The sun rises in the",
-        "Water is made of",
-        "The capital of France is",
-    ],
-}
-
-INSTRUCT_PROMPTS = {
-    "Instruction: Write a Story": RAW_PROMPTS["Instruction: Write a Story"],
-    "Instruction: Q&A":          RAW_PROMPTS["Instruction: Q&A"],
     "Instruction: Complex": [
         "Write a short essay about why we need to protect the environment.",
         "Explain how a light bulb works in simple terms a child would understand.",
     ],
 }
 
+# 对比专用：同一个 prompt 在两个模型上的表现
 COMPARE_STORY       = "Once upon a time there was a little girl named Lily. She loved to explore the park near her house. One sunny afternoon, she saw a ladder leaning against a big tree. Curious about what was at the top, she started to climb. But the ladder began to wobble..."
 COMPARE_INSTRUCTION = "Write a story about a bear."
 
@@ -228,14 +228,14 @@ def run_pretrained(device, tokenizer, report):
 
     # Qualitative
     run_generation_suite(model, tokenizer, device, "Pretrained",
-                         RAW_PROMPTS, temperature=TEXT_TEMP, report=report)
+                         PRETRAIN_PROMPTS, temperature=TEXT_TEMP, report=report)
 
 
 def run_finetuned(device, tokenizer, report):
     model = _load_model(device, "finetuned")
     run_generation_suite(model, tokenizer, device,
                          "Finetuned (instruction format)",
-                         INSTRUCT_PROMPTS, temperature=INSTRUCT_TEMP,
+                         FINETUNE_PROMPTS, temperature=INSTRUCT_TEMP,
                          report=report)
 
 
@@ -243,12 +243,12 @@ def run_compare(device, tokenizer, report):
     pretrained = _load_model(device, "pretrained")
     finetuned  = _load_model(device, "finetuned")
 
-    # ── preprint runs ──
+    # ── individual runs ──
     run_generation_suite(pretrained, tokenizer, device, "Pretrained",
-                         RAW_PROMPTS, temperature=TEXT_TEMP, report=report)
+                         PRETRAIN_PROMPTS, temperature=TEXT_TEMP, report=report)
     run_generation_suite(finetuned, tokenizer, device,
                          "Finetuned (instruction format)",
-                         INSTRUCT_PROMPTS, temperature=INSTRUCT_TEMP,
+                         FINETUNE_PROMPTS, temperature=INSTRUCT_TEMP,
                          report=report)
 
     # ── side-by-side comparison ──
