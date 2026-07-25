@@ -44,7 +44,7 @@ class FinetuneConfig:
     max_seq_len = 256
     # optimization
     batch_size = 32
-    learning_rate = 1e-4        # mask_instruction 需要更大 lr 补偿信号损失
+    learning_rate = 3e-5
     weight_decay = 0.1
     max_epochs = 5
     max_steps_per_epoch = 2000
