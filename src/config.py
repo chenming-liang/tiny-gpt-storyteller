@@ -47,7 +47,7 @@ class FinetuneConfig:
     learning_rate = 3e-5
     weight_decay = 0.1
     max_epochs = 5
-    max_steps_per_epoch = 2000
+    max_steps_per_epoch = 1625  # Alpaca: 52K / 32 batches ≈ 1625
     # dropout (finetuning usually adds some)
     dropout = 0.1
     # mixed precision
