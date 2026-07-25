@@ -17,6 +17,7 @@
 
 % Additional packages
 \usepackage{hyperref}
+\usepackage[all]{hypcap}
 \usepackage{url}
 \usepackage{booktabs}
 \usepackage{amsfonts}
@@ -36,7 +37,7 @@
 \maketitle
 
 \begin{abstract}
-本文训练了一个小型 GPT 语言模型（$d_{\text{model}}=384$，12 头注意力，10 层 Transformer，约 56.5M 参数），涵盖预训练和指令微调两个阶段。预训练使用 TinyStories 数据集，微调使用 Alpaca 数据集。预训练模型在 TinyStories 验证集上达到 1.48 Loss 和 4.41 PPL，具备良好的故事续写能力。指令微调后，模型学会了遵循 Alpaca 指令格式生成回答，同时保留了故事续写能力。实验表明，模型在同领域文本上表现良好，但在跨领域（如 WikiText-2）和事实性问答任务上仍有明显不足。
+本文报告了一个小型 GPT 语言模型（$d_{\text{model}}=384$，12 头注意力，10 层 Transformer，约 56.5M 参数）的训练过程，涵盖预训练和指令微调两个阶段。预训练使用 TinyStories 数据集，微调使用 Alpaca 数据集。预训练模型在 TinyStories 验证集上达到 1.48 Loss 和 4.41 PPL，具备良好的故事续写能力。指令微调后，模型学会了遵循 Alpaca 指令格式生成回答，同时保留了故事续写能力。实验表明，模型在同领域文本上表现良好，但在跨领域（如 WikiText-2）和事实性问答任务上仍有明显不足。
 \end{abstract}
 
 \section{Introduction}
@@ -301,7 +302,7 @@ Once upon a time there was a rabbit that eats a carrot. It was a bright, juicy c
 
 Once upon a time there was a duck that swims in a pond and feels happy. One day, a big bird flew towards the pond and landed on the other side. This bird was loud and his wings were designed to fly higher than the other bird. The big bird saw the big bird in the pond and was very nervous. The big bird swam away, and the big bird was left alone in the pond. He was afraid that he would never swim ever again.
 
-结果显示，微调模型能够正确识别并遵循 Alpaca 指令格式，在指令后生成格式正确的回答。在 Text 1 中，模型构建了有开头、情节推进的叙事框架（Brownie 小熊从迷茫到出发探险）。然而生成质量并不稳定。Text 2 中主角身份在 rabbit / carrot / Lily 之间切换不清，指令要求写``rabbit eats carrot''，但故事中 carrot 成了有名字、有情感的主角，rabbit 反而缺失。
+结果表明，微调模型能够正确识别并遵循 Alpaca 指令格式，在指令后生成格式正确的回答。在 Text 1 中，模型构建了有开头、情节推进的叙事框架（Brownie 小熊从迷茫到出发探险）。然而生成质量并不稳定。Text 2 中，模型以 ``a rabbit'' 引入主角，但后续句中代词 ``it'' 的指代对象从 rabbit 滑向 carrot，导致叙事焦点发生混乱。这种跨句指代不一致反映了小模型在长距离依赖建模上的固有限制。
 
 \textbf{指令问答}
 
