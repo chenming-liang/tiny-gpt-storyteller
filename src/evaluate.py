@@ -38,10 +38,10 @@ INSTRUCT_TEMP = 0.7          # instruction-following
 # 预训练模型专用：所有 prompt 都以裸文本输入（模型做续写）
 PRETRAIN_PROMPTS = {
     "Story Completion": [
-        "Once upon a time there was a little girl named Lily. She loved to explore the park near her house. One sunny afternoon, she saw a ladder leaning against a big tree. Curious about what was at the top, she started to climb. But the ladder began to wobble...",
-        "Once upon a time there was a little boy named Max. Max loved to help his family in the garden. One day, he dug a deep hole and found a mysterious wooden box covered in dirt. He carefully opened it and saw...",
-        "Once upon a time there was a very kind wizard. He lived in a tall tower and spent his days helping the villagers nearby. One morning, he heard a knock on the door and found a tiny baby dragon on his doorstep...",
-        "Once upon a time there was a brave little duck named Dottie. Dottie wasn't afraid of the dark, or thunderstorms, or even the big fish who lived in the pond. But one day, Dottie had to cross a very wobbly bridge to get to her nest. As she stepped onto the bridge...",
+        "Once upon a time there was a little girl named Lily. She loved to explore the park near her house. One sunny afternoon, she saw a ladder leaning against a big tree. Curious about what was at the top, she started to climb. But the ladder began to wobble",
+        "Once upon a time there was a little boy named Max. Max loved to help his family in the garden. One day, he dug a deep hole and found a mysterious wooden box covered in dirt. He carefully opened it and saw",
+        "Once upon a time there was a very kind wizard. He lived in a tall tower and spent his days helping the villagers nearby. One morning, he heard a knock on the door and found a tiny baby dragon on his doorstep",
+        "Once upon a time there was a brave little duck named Dottie. Dottie wasn't afraid of the dark, or thunderstorms, or even the big fish who lived in the pond. But one day, Dottie had to cross a very wobbly bridge to get to her nest. As she stepped onto the bridge",
     ],
     "Factual Completion": [
         "The sun rises in the",
@@ -70,7 +70,7 @@ FINETUNE_PROMPTS = {
 }
 
 # 对比专用：同一个 prompt 在两个模型上的表现
-COMPARE_STORY       = "Once upon a time there was a little girl named Lily. She loved to explore the park near her house. One sunny afternoon, she saw a ladder leaning against a big tree. Curious about what was at the top, she started to climb. But the ladder began to wobble..."
+COMPARE_STORY       = "Once upon a time there was a little girl named Lily. She loved to explore the park near her house. One sunny afternoon, she saw a ladder leaning against a big tree. Curious about what was at the top, she started to climb. But the ladder began to wobble"
 COMPARE_INSTRUCTION = "Write a story about a bear."
 
 
