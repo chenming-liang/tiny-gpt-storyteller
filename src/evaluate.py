@@ -70,7 +70,7 @@ INSTRUCT_PROMPTS = {
     ],
 }
 
-COMPARE_STORY       = "Once upon a time there was a little girl named Lucy. She was very adventurous. She loved to explore the world around her, especially when it was bright and sunny outside. One day, while exploring the nearby park, Lucy came across a ladder leaning on a wall. She was curious to see what was on top, so she climbed the ladder, but when she reached the top, the ladder fell and she was stuck. A nearby park ranger noticed her and shouted out,"
+COMPARE_STORY       = "Once upon a time there was a little girl named Lily. She loved to explore the park near her house. One sunny afternoon, she saw a ladder leaning against a big tree. Curious about what was at the top, she started to climb. But the ladder began to wobble..."
 COMPARE_INSTRUCTION = "Write a story about a bear."
 
 
