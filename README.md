@@ -88,9 +88,9 @@ python src/evaluate.py compare
 
 ```
 ├── README.md                  # 本文件
-├── project.pdf                # 技术报告（编译版 PDF）
-├── report/                    # 技术报告源码（NeurIPS 模板）
+├── report/                    # 技术报告（NeurIPS 模板）
 │   ├── report.tex             # LaTeX 源码
+│   ├── report.pdf             # 编译版 PDF
 │   ├── neurips.sty
 │   ├── pretrain_loss.png      # 预训练曲线
 │   └── finetune_loss.png      # 指令微调曲线
@@ -107,7 +107,7 @@ python src/evaluate.py compare
 技术报告按 NeurIPS 模板撰写，涵盖数据与模型细节、训练/微调全流程、逐轮 Loss 与 PPL 曲线、定量与定性评测及大量生成样例分析：
 
 - LaTeX 源码：[`report/report.tex`](report/report.tex)
-- 编译版 PDF：[`project.pdf`](project.pdf)
+- 编译版 PDF：[`report/report.pdf`](report/report.pdf)
 
 ## 致谢 References
 

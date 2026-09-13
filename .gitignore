@@ -18,3 +18,4 @@ GPT 建议.md
 notebooks/
 report/*.md
 *.pdf
+!report/report.pdf
