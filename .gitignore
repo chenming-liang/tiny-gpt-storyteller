@@ -10,6 +10,10 @@ venv/
 PLAN.md
 project.md
 my_notes/
+代码复盘.md
+GPT 建议.md
+复盘纠错清单.md
+面试问答清单.md
 .vscode/
 notebooks/
 report/*.md
